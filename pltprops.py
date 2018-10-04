@@ -65,6 +65,7 @@ def std_overlay(cat, axvar, xlims, ylims, shade=[0,0]):
         'siglum':'$\Sigma$, CO-based',
         'siglte':'$\Sigma$, LTE-based',
         'sigvir':'$\Sigma$, virial',
+        'sigevir':'$\Sigma$, ell. virial',
         'rad_pc':'spherical radius',
         'vrms_k':'rms linewidth',
         'area_pc2':'projected area',
@@ -114,7 +115,7 @@ def std_overlay(cat, axvar, xlims, ylims, shade=[0,0]):
         axes.plot(xmod, xmod+1, linestyle=':', color='k', lw=1)
         axes.plot(xmod, xmod+2, linestyle=':', color='k', lw=1)
     # Lines of constant external pressure
-    if axvar[0].startswith('sig') and axvar[1] == 'sigvir':
+    if axvar[0].startswith('sig') and (axvar[1] == 'sigvir' or axvar[1] == 'sigevir'):
         xmod = np.linspace(xlims[0],xlims[1],100)
         ymod = np.log10(10**xmod + (20/(3*np.pi*21.1))*1.e4/10**xmod)
         axes.plot(xmod, ymod, linestyle='-', color='g', lw=1)
@@ -250,10 +251,11 @@ def pltprops(label, fghz=230.538, distpc=4.8e4, dvkms=0.2, beam=2,
     idc=[0,0,0,0]
     for i, typ in enumerate(['trunks', 'branches', 'leaves', 'clusters']):
         idc[i] = []
-        with open(label+'_'+typ+'.txt', 'r') as f:
-            reader=csv.reader(f, delimiter=' ')
-            for row in reader:
-                idc[i].append(int(row[0]))
+        if os.path.exists(label+'_'+typ+'.txt'):
+            with open(label+'_'+typ+'.txt', 'r') as f:
+                reader=csv.reader(f, delimiter=' ')
+                for row in reader:
+                    idc[i].append(int(row[0]))
 #         with open(label+'_'+typ+'.txt', 'r') as f:
 #             reader=csv.reader(f, delimiter=' ')
 #             a = zip(*reader)
@@ -267,13 +269,16 @@ def pltprops(label, fghz=230.538, distpc=4.8e4, dvkms=0.2, beam=2,
         trd.append(list(map(int, line.split('|')[1].split(','))))
     
     # Get the lists of cluster descendants and colors
-    f=open(label+'_clusters.txt','r')
-    text=f.read()
-    cld = []
-    clco = []
-    for line in text.splitlines():
-        cld.append(list(map(int, line.split('|')[1].split(','))))
-        clco.append(line.split()[1]) 
+    plotclusters=False
+    if os.path.exists(label+'_clusters.txt'):
+        plotclusters=True
+        f=open(label+'_clusters.txt','r')
+        text=f.read()
+        cld = []
+        clco = []
+        for line in text.splitlines():
+            cld.append(list(map(int, line.split('|')[1].split(','))))
+            clco.append(line.split()[1]) 
 
     # Histogram of PAs
     val = 'position_angle'
@@ -300,13 +305,14 @@ def pltprops(label, fghz=230.538, distpc=4.8e4, dvkms=0.2, beam=2,
     plt.savefig('plots/'+label+'_pahist.pdf', bbox_inches='tight')
     plt.close()
 
+    # ==================================================
     # Size-linewidth relation, color coded
     plotx = 'rad_pc'
     ploty = 'vrms_k'
     x, y, xerr, yerr = [pcat[plotx], pcat[ploty], pcat['e_'+plotx], pcat['e_'+ploty]]
     # Must be positive to take logarithm
     good = np.intersect1d(np.where(x>0)[0], np.where(y>0)[0])
-    z    = ['x_cen', 'y_cen', 'v_cen', 'tpkav', 'siglum', '8um_avg']
+    z    = ['x_cen', 'y_cen', 'v_cen', 'tpkav', 'siglum', '8um_avg', 'axratio']
     cmap = plt.cm.get_cmap('jet')
     for i in range(len(z)):
         if z[i] not in cat.keys() and z[i] not in pcat.keys():
@@ -323,7 +329,11 @@ def pltprops(label, fghz=230.538, distpc=4.8e4, dvkms=0.2, beam=2,
                 mec='none', msize=30, zorder=2, cmap=cmap, label=zlbl )
         elif z[i] in pcat.keys():
             zlbl = z[i]+' ['+str(pcat[z[i]].unit)+']'
-            sctplot( np.log10(x[good]), np.log10(y[good]), pcat[z[i]][good], 
+            if z[i]=='axratio':
+                colax=1./pcat[z[i]][good]
+            else:
+                colax=pcat[z[i]][good]                
+            sctplot( np.log10(x[good]), np.log10(y[good]), colax,
                 mec='none', msize=30, zorder=2, cmap=cmap, label=zlbl )
         std_overlay(pcat, [plotx, ploty], xlims[0], ylims[0], 
             [shade['rad_pc'],shade['vrms_k']])
@@ -423,34 +433,35 @@ def pltprops(label, fghz=230.538, distpc=4.8e4, dvkms=0.2, beam=2,
         plt.savefig('plots/'+label+'_'+pltname[i]+'_trunks.pdf', bbox_inches='tight')
         plt.close()
         # --- Plot clusters and their descendants (get marker color from table)
-        fig, axes = plt.subplots()
-        if xplot[i] == 'rad_pc' and yplot[i].startswith('m'):
-            axes.set_aspect(0.6)
-        else:
-            axes.set_aspect('equal')
-        plt.errorbar( np.log10(x[idsel[3]]), np.log10(y[idsel[3]]), 
-            xerr=xerr[idsel[3]]/np.log(10), yerr=yerr[idsel[3]]/np.log(10), 
-            ecolor='dimgray', capsize=0, 
-            zorder=2, marker=None, ls='None', lw=1, label=None)
-        sctplot ( np.log10(x[idsel[3]]), np.log10(y[idsel[3]]), mark='s', 
-            zorder=4, col=clco, msize=25 )
-        unshade2 = idsel[3][:]
-        unshade2 = [val for val in idsel[3] if val in unshade.tolist()]
-        # Plot best-fitting line to clusters only
-        if pltname[i] not in ['bnd', 'bndlte']:
-            linefitting( np.log10(x[unshade2]), np.log10(y[unshade2]), 
-                xerr=xerr[unshade2]/np.log(10), yerr=yerr[unshade2]/np.log(10), 
-                xrange=xlims[i], color='b' )
-        for j, tno in enumerate(idsel[3]):
-            clsel = cld[j][:]
-            clsel = [val for val in cld[j] if val in good.tolist()]
-            sctplot ( np.log10(x[clsel]), np.log10(y[clsel]), col='w', 
-                mec=clco[j], zorder=3, msize=10, label='cluster'+str(tno), alpha=0.5 )
-        std_overlay(pcat, [xplot[i], yplot[i]], xlims[i], ylims[i], [xmin,ymin])
-        # Only show legend if there are 9 or fewer clusters
-        if len(idsel[3]) <= 9:
-            plt.legend(loc='lower right',fontsize='x-small',scatterpoints=1)
-        plt.savefig('plots/'+label+'_'+pltname[i]+'_clusters.pdf', bbox_inches='tight')
-        plt.close()
+        if plotclusters:
+            fig, axes = plt.subplots()
+            if xplot[i] == 'rad_pc' and yplot[i].startswith('m'):
+                axes.set_aspect(0.6)
+            else:
+                axes.set_aspect('equal')
+            plt.errorbar( np.log10(x[idsel[3]]), np.log10(y[idsel[3]]), 
+                xerr=xerr[idsel[3]]/np.log(10), yerr=yerr[idsel[3]]/np.log(10), 
+                ecolor='dimgray', capsize=0, 
+                zorder=2, marker=None, ls='None', lw=1, label=None)
+            sctplot ( np.log10(x[idsel[3]]), np.log10(y[idsel[3]]), mark='s', 
+                zorder=4, col=clco, msize=25 )
+            unshade2 = idsel[3][:]
+            unshade2 = [val for val in idsel[3] if val in unshade.tolist()]
+            # Plot best-fitting line to clusters only
+            if pltname[i] not in ['bnd', 'bndlte']:
+                linefitting( np.log10(x[unshade2]), np.log10(y[unshade2]), 
+                    xerr=xerr[unshade2]/np.log(10), yerr=yerr[unshade2]/np.log(10), 
+                    xrange=xlims[i], color='b' )
+            for j, tno in enumerate(idsel[3]):
+                clsel = cld[j][:]
+                clsel = [val for val in cld[j] if val in good.tolist()]
+                sctplot ( np.log10(x[clsel]), np.log10(y[clsel]), col='w', 
+                    mec=clco[j], zorder=3, msize=10, label='cluster'+str(tno), alpha=0.5 )
+            std_overlay(pcat, [xplot[i], yplot[i]], xlims[i], ylims[i], [xmin,ymin])
+            # Only show legend if there are 9 or fewer clusters
+            if len(idsel[3]) <= 9:
+                plt.legend(loc='lower right',fontsize='x-small',scatterpoints=1)
+            plt.savefig('plots/'+label+'_'+pltname[i]+'_clusters.pdf', bbox_inches='tight')
+            plt.close()
     
     return

@@ -115,10 +115,17 @@ def calc_phys_props(label='pcc_12', cubefile=None, boot_iter=400, efloor=0,
     if ancfile is not None:
         ancdata,anchd = getdata(ancfile, header=True)
 
+
+    # elliptical function
+    def w_ell(ratio):
+        return np.log(np.sqrt(ratio**2-1)+ratio)/np.sqrt(ratio**2-1)
+    
     # ---- call the bootstrapping routine
-    emaj, emin, epa, evrms, errms, eaxra, eflux, emvir, ealpha, tb12, ancmean, ancrms = [
-        np.zeros(len(srclist)) for _ in range(12)]
+    emaj, emin, epa, evrms, errms, eaxra, eflux, emvir, eemvir, ealpha, tb12, ancmean, ancrms = [
+        np.zeros(len(srclist)) for _ in range(13)]
     print("Calculating property errors...")
+
+    
     for j, clust in enumerate(srclist):
         asgn = np.zeros(cube.shape)
         asgn[d[clust].get_mask(shape = asgn.shape)] = 1
@@ -133,6 +140,7 @@ def calc_phys_props(label='pcc_12', cubefile=None, boot_iter=400, efloor=0,
         # plt.savefig('emmajs_histo.pdf', bbox_inches='tight')
 
         bootmaj   = np.asarray(emmajs) * u.arcsec
+        bootmajpc = (bootmaj*dist).to(u.pc, equivalencies=u.dimensionless_angles())
         bootmin   = np.asarray(emmins) * u.arcsec
         bootpa    = np.asarray(pa) * u.deg
         bootvrms  = (np.asarray(emomvs)*u.m/u.s).to(u.km/u.s)
@@ -141,6 +149,8 @@ def calc_phys_props(label='pcc_12', cubefile=None, boot_iter=400, efloor=0,
         bootaxrat = bootmin/bootmaj
         bootflux  = np.asarray(emom0s) * u.Jy
         bootmvir  = (5*rmstorad*bootvrms**2*bootrrms/const.G).to(u.solMass)
+        # elliptical mvir:
+        bootemvir = (5*rmstorad*bootvrms**2*bootmajpc/w_ell(1./bootaxrat)/const.G).to(u.solMass)
         bootmlum  = alphaco*alphascale*deltav*asarea*(bootflux).to(
             u.K, equivalencies=u.brightness_temperature(as2,freq))
         bootalpha = bootmvir/bootmlum
@@ -152,6 +162,7 @@ def calc_phys_props(label='pcc_12', cubefile=None, boot_iter=400, efloor=0,
         errms[j]  = indfac * mad_std(bootrrms) / np.median(bootrrms)    
         eaxra[j]  = indfac * mad_std(bootaxrat)/ np.median(bootaxrat)
         emvir[j]  = indfac * mad_std(bootmvir) / np.median(bootmvir)
+        eemvir[j] = indfac * mad_std(bootemvir) / np.median(bootemvir)
         ealpha[j] = indfac * mad_std(bootalpha)/ np.median(bootalpha)
 
         if copbcor is not None and conoise is not None:
@@ -188,9 +199,12 @@ def calc_phys_props(label='pcc_12', cubefile=None, boot_iter=400, efloor=0,
     # ---- calculate the physical properties
     rms_pc  = (cat['radius'] * dist).to(
         u.pc, equivalencies=u.dimensionless_angles())
+    maj_pc  = (cat['major_sigma'] * dist).to(
+        u.pc, equivalencies=u.dimensionless_angles())
     rad_pc  = rmstorad * rms_pc
     v_rms   = cat['v_rms'].to(u.km/u.s)
     axrat   = cat['minor_sigma'] / cat['major_sigma']
+    axrat.unit = ""
     ellarea = (cat['area_ellipse']*dist**2).to(
         u.pc**2,equivalencies=u.dimensionless_angles())
     xctarea = (cat['area_exact']*dist**2).to(
@@ -207,7 +221,10 @@ def calc_phys_props(label='pcc_12', cubefile=None, boot_iter=400, efloor=0,
         mlumco = alphaco * alphascale * lumco
     siglum = mlumco/xctarea
     mvir   = (5*rmstorad*v_rms**2*rms_pc/const.G).to(u.solMass)  # Rosolowsky+ 08
+    emvir   = (5*rmstorad*v_rms**2* maj_pc/w_ell(1./axrat) /const.G).to(u.solMass)  # Rosolowsky+ 08
+
     sigvir = mvir / xctarea
+    sigevir = emvir / xctarea
     alpha  = mvir / mlumco
 
     # ---- make the physical properties table
@@ -231,8 +248,12 @@ def calc_phys_props(label='pcc_12', cubefile=None, boot_iter=400, efloor=0,
     ptab['e_siglum']  = Column(eflux, description='same as e_mlumco')
     ptab['mvir']      = Column(mvir, description='virial mass')
     ptab['e_mvir']    = Column(emvir, description='frac error in virial mass')
+    ptab['emvir']     = Column(emvir, description='elliptical virial mass')
+    ptab['e_emvir']   = Column(eemvir, description='frac error in elliptical virial mass')
     ptab['sigvir']    = Column(sigvir, description='virial surface density')
     ptab['e_sigvir']  = Column(emvir, description='same as e_mvir')
+    ptab['sigevir']    = Column(sigevir, description='ell. virial surface density')
+    ptab['e_sigevir']  = Column(emvir, description='same as e_mvir')
     ptab['alpha']     = Column(alpha, unit='', description='virial parameter')
     ptab['e_alpha']   = Column(ealpha, description='frac error in virial parameter')
     if ancfile is not None:

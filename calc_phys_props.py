@@ -31,7 +31,7 @@ PURPOSE: Create the physprop.txt table from the dendrogram catalog.
         anclabel: label for column corresponding to ancfile (e.g. '8um_avg')
 '''
 
-def clustbootstrap(sindices, svalues, meta, bootstrap):
+def clustbootstrap(sindices, svalues, meta, bootstrap,  verbose=False):
     bootiters = range(bootstrap)
     emmajs = []; emmins = []; emomvs = []; eflux = []; pa = []
     npts = len(svalues)
@@ -49,11 +49,17 @@ def clustbootstrap(sindices, svalues, meta, bootstrap):
         emomvs.append(bstats.v_rms.value)
         eflux.append(bstats.flux.value)
         pa.append(bstats.position_angle.value)
+        if verbose: print bootit,"/",bootiters.max()
     return emmajs, emmins, emomvs, eflux, pa
 
 
 def calc_phys_props(label='pcc_12', cubefile=None, boot_iter=400, efloor=0,
-        alphascale=1, distpc=4.8e4, copbcor=None, conoise=None, ancfile=None, anclabel=None):
+                    alphascale=1, distpc=4.8e4, copbcor=None, conoise=None, ancfile=None, anclabel=None, verbose=False, clipping=False):
+
+    if clipping:
+        clipstr="_clipped"
+    else:
+        clipstr=""
 
     rmstorad= 1.91
     alphaco = 4.3 * u.solMass * u.s / (u.K * u.km * u.pc**2) # Bolatto+ 13
@@ -63,7 +69,7 @@ def calc_phys_props(label='pcc_12', cubefile=None, boot_iter=400, efloor=0,
 
     # ---- load the dendrogram and catalog
     d = Dendrogram.load_from(label+'_dendrogram.hdf5')
-    cat = Table.read(label+'_full_catalog.txt', format='ascii.ecsv')
+    cat = Table.read(label+'_full_catalog'+clipstr+'.txt', format='ascii.ecsv')
     srclist = cat['_idx'].tolist()
 
     # ---- load the cube and extract the metadata
@@ -82,7 +88,13 @@ def calc_phys_props(label='pcc_12', cubefile=None, boot_iter=400, efloor=0,
         freq = hd3['RESTFRQ'] * u.Hz
     cdelt1 = abs(hd3['cdelt1']) * 3600. * u.arcsec
     cdelt2 = abs(hd3['cdelt2']) * 3600. * u.arcsec
-    deltav = abs(hd3['cdelt3'])/1000. * u.km / u.s
+    # this assumes vel cube!
+    if hd3['ctype3'][0:4]=="FREQ":
+        nu0=hd3['restfrq']
+        dnu=hd3['cdelt3']
+        deltav=2.99792458e5 * np.absolute(dnu)/nu0 * u.km / u.s
+    else:
+        deltav = abs(hd3['cdelt3'])/1000. * u.km / u.s
     metadata['wavelength'] = freq.to(u.m,equivalencies=u.spectral())
     metadata['spatial_scale']  =  cdelt2
     metadata['velocity_scale'] =  deltav
@@ -127,13 +139,14 @@ def calc_phys_props(label='pcc_12', cubefile=None, boot_iter=400, efloor=0,
 
     
     for j, clust in enumerate(srclist):
+        if verbose: print "   cl",j,"/",len(srclist)
         asgn = np.zeros(cube.shape)
         asgn[d[clust].get_mask(shape = asgn.shape)] = 1
         sindices = np.where(asgn == 1)
         svalues = cube[sindices]
 
         emmajs, emmins, emomvs, emom0s, pa = clustbootstrap(
-            sindices, svalues, metadata, boot_iter)
+            sindices, svalues, metadata, boot_iter, verbose=False)
         # bin_list=np.linspace(np.floor(min(emmajs)),np.ceil(max(emmajs)),50)
         # fig, axes = plt.subplots()
         # axes.hist(emmajs, bin_list, normed=0, histtype='bar')
@@ -147,7 +160,7 @@ def calc_phys_props(label='pcc_12', cubefile=None, boot_iter=400, efloor=0,
         bootrrms  = (np.sqrt(np.asarray(emmajs)*np.asarray(emmins))*u.arcsec*dist).to(
             u.pc, equivalencies=u.dimensionless_angles())
         bootaxrat = bootmin/bootmaj
-        bootflux  = np.asarray(emom0s) * u.Jy
+        bootflux  = np.asarray(emom0s) * u.Jy   # RI: cube assumed to be Jy
         bootmvir  = (5*rmstorad*bootvrms**2*bootrrms/const.G).to(u.solMass)
         # elliptical mvir:
         bootemvir = (5*rmstorad*bootvrms**2*bootmajpc/w_ell(1./bootaxrat)/const.G).to(u.solMass)
@@ -262,4 +275,4 @@ def calc_phys_props(label='pcc_12', cubefile=None, boot_iter=400, efloor=0,
         ptab[anclabel] = Column(ancmean, unit=anchd['BUNIT'])
         ancferr = indfac * ancrms / ancmean
         ptab['e_'+anclabel] = Column(ancferr)
-    ptab.write(label+'_physprop.txt', format='ascii.ecsv', overwrite=True)
+    ptab.write(label+'_physprop'+clipstr+'.txt', format='ascii.ecsv', overwrite=True)

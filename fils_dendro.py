@@ -259,14 +259,21 @@ pl.savefig(label+".plots/"+label+".fils_velfield.png")
 #================================================================
 # show the image with the elongated dendros and the filaments, and then the overlapping filaments as we find them below
 
-plotlabels=False
 
+pl.figure(1)
 pl.clf()
 pl.imshow((pl.nanmax(mom0)-mom0)**3,origin="bottom",cmap="gray")
-
 pl.subplots_adjust(left=0.05,right=0.98,bottom=0.05,top=0.98)
 pl.xlim(xra)
 pl.ylim(yra)
+
+pl.figure(2)
+pl.clf()
+pl.imshow((pl.nanmax(mom0)-mom0)**3,origin="bottom",cmap="gray")
+pl.subplots_adjust(left=0.05,right=0.98,bottom=0.05,top=0.98)
+pl.xlim(xra)
+pl.ylim(yra)
+
 import pdb
 
 plotted=pl.zeros(len(pcat),dtype=bool)
@@ -277,12 +284,19 @@ for i in range(n_elong_dendro):
         mask2d=pl.byte(t.get_mask().max(axis=0))
         #mycont=pl.contour(mask2d,1,levels=[0.1+0.2*t.level],vmin=0,vmax=1,cmap="plasma")
         #mycont=pl.contour(mask2d,1,levels=[0.1],vmin=0,vmax=1,cmap="plasma")
+        pl.figure(1)
+        mycont=pl.contour(mask2d,1,levels=[0.1],vmin=0,vmax=1,colors='g')
+        pl.figure(2)
         mycont=pl.contour(mask2d,1,levels=[0.1],vmin=0,vmax=1,colors='g')
         plotted[zelong[i]]=True
         zyx=t.indices()
-        if plotlabels:  pl.text(zyx[2].mean(),zyx[1].mean(),t.idx)
+        # only on plot 2:
+        pl.text(zyx[2].mean(),zyx[1].mean(),t.idx)
         #print t.idx,t.level
 
+pl.figure(1)
+pl.contour(fils.skeleton, colors='c',linewidths=1,vmin=0,vmax=1,levels=[0.5])
+pl.figure(2)
 pl.contour(fils.skeleton, colors='c',linewidths=1,vmin=0,vmax=1,levels=[0.5])
 
 
@@ -335,8 +349,9 @@ for ifil in range(len(labeled_filament_arrays)):
     if pixoverlap[zorder[0]]>0:
         zoverlap=pl.where(pixoverlap[zorder]>0)[0]
         # remember which dendros overlap:
-        associated_dendros.append({"indices":zelong[zorder[zoverlap]],"pixoverlap":pixoverlap[zorder[zoverlap]]})        
-        if plotlabels: pl.text(off[0][1],off[0][0],ifil,color="m")
+        associated_dendros.append({"indices":zelong[zorder[zoverlap]],"pixoverlap":pixoverlap[zorder[zoverlap]]})
+        pl.figure(2)
+        pl.text(off[0][1],off[0][0],ifil,color="m")
 
         # go through overlapping dendros and analyze overlap w/subbranches from _labeled_mask
         thisbranchlist=[]
@@ -350,6 +365,9 @@ for ifil in range(len(labeled_filament_arrays)):
 
             t=d[zelong[izo]]
             mask2d=pl.byte(t.get_mask().max(axis=0))
+            pl.figure(1)
+            mycont=pl.contour(mask2d,1,levels=[0.1],vmin=0,vmax=1,cmap="plasma")
+            pl.figure(2)
             mycont=pl.contour(mask2d,1,levels=[0.1],vmin=0,vmax=1,cmap="plasma")
             # 0.6: salmon-colored;  0.1=purple
 
@@ -390,14 +408,18 @@ for ifil in range(len(labeled_filament_arrays)):
         associated_dendros.append({"indices":[],"npixoverlap":[],
                                    "overlapbranches":[]})
 
+    pl.figure(1)
     pl.contour(XX[off[0][1]:off[1][1]+1],YY[off[0][0]:off[1][0]+1],xfarr_overlap,1,levels=[0.5],colors='r',vmin=0,vmax=1,linewidths=1)
-    #pl.contour(XX[off[0][1]:off[1][1]+1],YY[off[0][0]:off[1][0]+1],farr_overlap,1,levels=[0.5],colors='g',vmin=0,vmax=1,linewidths=1,linestyles='dotted')
+    pl.figure(2)
+    pl.contour(XX[off[0][1]:off[1][1]+1],YY[off[0][0]:off[1][0]+1],xfarr_overlap,1,levels=[0.5],colors='r',vmin=0,vmax=1,linewidths=1)
     overlapping_arrays.append(farr_overlap)
     overlapping_xarrays.append(xfarr_overlap)
 
 
 
-
+pl.figure(2)
+pl.savefig(label+".plots/"+label+".fils_dendro_labels.png")
+pl.figure(1)
 pl.savefig(label+".plots/"+label+".fils_dendro.png")
 
 
@@ -549,7 +571,12 @@ for ifil in range(len(fils.filaments)):
 # look at how he does longest_path
 
     
-
+import pickle
+pickle.dump({"associated_dendros":associated_dendros,
+             "overlapping_fil_branches":overlapping_fil_branches,
+             "overlapping_arrays":overlapping_arrays, # just the part of the skel that overlaps
+             "overlapping_xarrays":overlapping_xarrays}, # extended to end of branch
+            open(label+".fils_dendro.pkl","wb"))
 
 
 

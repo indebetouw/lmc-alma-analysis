@@ -19,7 +19,7 @@ from scipy import stats
 
 
 # ----------------------------------------------------------------------------------------
-def prop_hist(label = '', dolog = True, val = 'mvir', lims = [], binnum = 20, binsize = 0, types = []):
+def prop_hist(label = '', dolog = True, val = 'mvir', lims = [], binnum = 20, binsize = 0, types = [], indir="../props/", outdir="../prophists/"):
     # new version of mass_spec function
     # label is the name of the data set (eg 30dor, pcc, etc.)
     # val is the input from the label_physprop_add.txt columns
@@ -47,8 +47,8 @@ def prop_hist(label = '', dolog = True, val = 'mvir', lims = [], binnum = 20, bi
                 continue
 
     # makes directory in which plots will be created if it doesn't already exist
-    if os.path.isdir('../prophists') == 0:
-        os.mkdir('../prophists')
+    if os.path.isdir(outdir) == 0:
+        os.mkdir(outdir)
 
     # formatting parameters
     params = {'text.usetex' : False, 'mathtext.fontset' : 'stixsans'}
@@ -56,17 +56,17 @@ def prop_hist(label = '', dolog = True, val = 'mvir', lims = [], binnum = 20, bi
     plt.rcParams.update(params)
 
     # read in data
-    if os.path.isfile('../props/' + label + '_physprop_add.txt'):
-        pcat = Table.read('../props/' + label + '_physprop_add.txt', format = 'ascii.ecsv')
+    if os.path.isfile(indir + label + '_physprop_add.txt'):
+        pcat = Table.read(indir + label + '_physprop_add.txt', format = 'ascii.ecsv')
     else:
-        pcat = Table.read('../props/' + label + '_physprop.txt', format = 'ascii.ecsv')
+        pcat = Table.read(indir + label + '_physprop.txt', format = 'ascii.ecsv')
 
     # get indicies of trunks, branches, leaves, and clusters
     # defauls are as follows: idc[0] is a lis of trunk indices,
     # idc[1] of branches, idc[2] of leaves, idc[3] of clusters
     idc = [0, 0, 0, 0]
     for i, typ in enumerate(types):
-        with open('../props/' + label + '_' + typ + '.txt', 'r') as f:
+        with open(indir + label + '_' + typ + '.txt', 'r') as f:
             reader = csv.reader(f, delimiter = ' ')
             a = zip(*reader)
         idc[i] = map(int, a[0])
@@ -141,9 +141,9 @@ def prop_hist(label = '', dolog = True, val = 'mvir', lims = [], binnum = 20, bi
     plt.title('{0}_{1}'.format(label, val))
     plt.legend(loc = 'best', fontsize = 'medium')
     #plt.show()
-    plt.savefig('../prophists/' + label + '_' + val + '_hist.pdf', bbox_inches = 'tight')
+    plt.savefig(outdir + label + '_' + val + '_hist.pdf', bbox_inches = 'tight')
     plt.close()
 
     print('Plot created successfully for {0}_{1}'.format(label, val))
     
-    return
+    return n,bins,pltdata

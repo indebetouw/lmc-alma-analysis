@@ -2,7 +2,8 @@ from astropy.io import fits
 from astropy import units as u
 import sys, os, pickle
 
-# this version switches to filfinder2D (from filfind_class::fil_finder_2D)
+# uses the new filfinder2D (from filfind_class::fil_finder_2D)
+# also uses my version of filFinder, which has some bugs fixed:
 
 gitpaths=['/Users/remy/lustre/naasc/users/rindebet/github/lmc-alma-analysis/',
           '/Users/remy/lustre/naasc/users/rindebet/github/FilFinder/',
@@ -33,22 +34,27 @@ def run_filfinder(label='mycloud', mom8file=None, mom0file=None, redo=False,
         os.mkdir(plotfiledir)
         redo=True
     
-    # give radial profiles more breathing room.
-    #fils.skeleton_pad_size=5
-    
     fils.preprocess_image(flatten_percent=90)
     
-    # 30dor: glob=72, flatten=100, adapt=75, size=800
-    # GMC1 1st time: 50,500, 50, 85
-    # ppbm=
-    # can lower glob_thresh, get more small things, then lower adapt_thresh to
+    # GMC1 adapt=50pix, size=300pix2, smooth=8pix    ppbm=1.76"/0.5=3.53
+    # so in bms, that's adapt=14, size=24, smooth=2.3
+    # for gmc1, using adapt=10, size=15 gives 23 fils instead of 8 and too much chaff,
+    # size=24, adapt=14, smooth=2.0: 9 fils instead of 8, more branches, and more vel perpendicular to fils.
+    # size=24, adapt=14, smooth=3: 11fils, a bit fewer small fils.
+    
+    # 30dor: glob=72, flatten=100, adapt=75pix, size=800pix2  ppbm=0.29/0.032=9.1
+    # so in bms, adapt=8.2, size=9.7 but bm elongated so narrow dir adapt=10
+    
+    # one can lower glob_thresh, get more small things, then lower adapt_thresh to
     # make them break up more, and finally let size_thresh kill them
-    # in new version, glob_thresh is no longer a percentage its a value; setting to 50%
-    # of the image max is too high; 20% is closer, 10% quite good
+    # in new FilFinder, glob_thresh is no longer a percentage its a value;
+    # setting to 50% of the image max is too high; 20% is closer, 10% quite good
+
+    bmwidth = pl.sqrt(fits_hdu.header['bmaj']*fits_hdu.header['bmin'])*3600*u.arcsec
     fils.create_mask(verbose=True, border_masking=False, 
                      use_existing_mask=False,save_png=True,
-                     adapt_thresh=50*u.pix, size_thresh=300*u.pix**2,
-                     smooth_size=8*u.pix, glob_thresh=pl.nanmax(fits_hdu.data)*0.1)
+                     adapt_thresh=14*bmwidth, size_thresh=24*bmwidth**2,
+                     smooth_size=3*bmwidth, glob_thresh=pl.nanmax(fits_hdu.data)*glob_thresh)
     
     fils.medskel(verbose=True,save_png=True)
     

@@ -59,24 +59,30 @@ def lte(files = [], tfloor = 8., datainfo = '', tx_method = 'peak', onlywrite = 
     elif 'RESTFRQ' in hd3d.keys():
         freq12 = hd3d['RESTFRQ'] * u.Hz
     print('The 12CO rest frequency is {0:.4f}'.format((freq12).to(u.GHz)))
-    print('min/max values of 12CO [K] are {0:.2f} and {1:.2f}'.format(
-        np.nanmin(t12cube), np.nanmax(t12cube)))
+    KtoJybm12= 8.185e-7* hd3d['bmaj']*hd3d['bmin']*3600**2 * (freq12.value/1e9)**2
+    if hd3d['bunit']=="Jy/beam":
+        t12cube=t12cube/KtoJybm12
+    if hd3d['ctype3'][0:3]=='VEL':
+        dv12=hd3d['cdelt3']/1000.*u.km/u.s
+    else:
+        assert hd3d['ctype3'][0:4]=='FREQ'
+        dv12=2.99792458e5 *np.absolute(hd3d['cdelt3'])/freq12
+    print('min/max values of 12CO [K] are {0:.2f} and {1:.2f}'.format(np.nanmin(t12cube), np.nanmax(t12cube)))
 
     # Load 12CO uncertainty [2D plane]
     print('\nReading {0}...'.format(inrms12))
     t12err, hd2d = fits.getdata(inrms12, header = True)
+    if hd2d['bunit']=="Jy/beam":
+        t12err=t12err/KtoJybm12
     print('min/max values of 12CO uncertainty are {0:.3f} and {1:.3f}'.format(
         np.nanmin(t12err), np.nanmax(t12err)))
 
     # Load 12CO mask [3D cube or 2D plane]
     print('\nReading {0}...'.format(inmask12))
     mask = fits.getdata(inmask12)
-    print('Number of mask == 1 values: {0}'.format(np.count_nonzero(
-        mask[~np.isnan(mask)] > 0)))
-    print('Number of mask == 0 values: {0}'.format(np.count_nonzero(
-        mask[~np.isnan(mask)] < 1)))
-    print('Number of mask == NaN values: {0}'.format(np.count_nonzero(
-        np.isnan(mask))))
+    print('Number of mask == 1 values: {0}'.format(np.count_nonzero(mask[~np.isnan(mask)] > 0)))
+    print('Number of mask == 0 values: {0}'.format(np.count_nonzero(mask[~np.isnan(mask)] < 1)))
+    print('Number of mask == NaN values: {0}'.format(np.count_nonzero(np.isnan(mask))))
     mask3d = (mask == 0)
     mask2d = (np.nansum(mask, axis = 0) == 0)
 
@@ -93,6 +99,7 @@ def lte(files = [], tfloor = 8., datainfo = '', tx_method = 'peak', onlywrite = 
             t12 = t12cube
             hdtx = hd3d
             t12[mask3d] = np.nan
+        hdtx['bunit']='K'
 
         print('\nCalculating Tex [excitation temperature]...')
         tcmb = 2.73 * u.K
@@ -101,8 +108,7 @@ def lte(files = [], tfloor = 8., datainfo = '', tx_method = 'peak', onlywrite = 
         #tex = 11.06 / (np.log(1 + 11.06/(t12 + 0.187)))
         tex = t0_12 / (np.log(1 + t0_12/((t12*u.K) + Jtcmb)))
         tex[tex < (tfloor * u.K)] = (tfloor * u.K)
-        print('min/max values of Tex [K] are {0:.2f} and {1:.2f}'.format(
-            np.nanmin(tex), np.nanmax(tex)))
+        print('min/max values of Tex [K] are {0:.2f} and {1:.2f}'.format(np.nanmin(tex), np.nanmax(tex)))
 
     if (len(onlywrite) == 0) or ('outtex12' in onlywrite) == True:
         hdtx['datamin'] = np.nanmin(tex).value
@@ -119,14 +125,22 @@ def lte(files = [], tfloor = 8., datainfo = '', tx_method = 'peak', onlywrite = 
     elif 'RESTFRQ' in hd3d.keys():
         freq13 = hd3d['RESTFRQ'] * u.Hz
     print('The 13CO rest frequency is {0:8.4f}'.format((freq13).to(u.GHz)))
-    print('min/max values of 13CO [K] are {0:.2f} and {1:.2f}'.format(
-        np.nanmin(t13), np.nanmax(t13)))
+    KtoJybm13= 8.185e-7* hd3d['bmaj']*hd3d['bmin']*3600**2 * (freq13.value/1e9)**2
+    if hd3d['bunit']=="Jy/beam":
+        t13=t13/KtoJybm13
+    if hd3d['ctype3'][0:3]=='VEL' or hd3d['ctype3'][0:4]=='VRAD':
+        dv13=hd3d['cdelt3']/1000.*u.km/u.s
+    else:
+        assert hd3d['ctype3'][0:4]=='FREQ'
+        dv13=2.99792458e5 *np.absolute(hd3d['cdelt3'])/freq13.value *u.km/u.s
+    print('min/max values of 13CO [K] are {0:.2f} and {1:.2f}'.format(np.nanmin(t13), np.nanmax(t13)))
 
     # Load 13CO uncertainty [2D plane]
     print('\nReading {0}...'.format(inrms13))
     t13err, hd2d = fits.getdata(inrms13, header = True)
-    print('min/max values of 13CO uncertainty are {0:.3f} and {1:.3f}'.format(
-        np.nanmin(t13err), np.nanmax(t13err)))
+    if hd2d['bunit']=="Jy/beam":
+        t13err=t13err/KtoJybm13
+    print('min/max values of 13CO uncertainty are {0:.3f} and {1:.3f}'.format(np.nanmin(t13err), np.nanmax(t13err)))
 
     # Calculate 13CO optical depth cube
     with np.errstate(invalid = 'ignore'):
@@ -134,14 +148,12 @@ def lte(files = [], tfloor = 8., datainfo = '', tx_method = 'peak', onlywrite = 
         t0_13 = (const.h * freq13 / const.k_B).to(u.K)
         #tau13 = -np.log(1-(t13/10.6)/(1/(np.exp(10.6/tex)-1)-1/(np.exp(10.6/2.73)-1)))
         tau13 = -np.log(1-((t13*u.K)/t0_13)/(1/(np.exp(t0_13/tex)-1)-1/
-            (np.exp(t0_13/tcmb)-1)))
-        print('min/max values of 13CO optical depth are {0:.2f} are {1:.2f}'.format(
-            np.nanmin(tau13), np.nanmax(tau13)))
+                                             (np.exp(t0_13/tcmb)-1)))
+        print('min/max values of 13CO optical depth are {0:.2f} are {1:.2f}'.format(np.nanmin(tau13), np.nanmax(tau13)))
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", RuntimeWarning)
             tau13peak = np.nanmax(tau13, axis = 0)
-        print('min/max values of peak 13CO optical depth are {0:.2f} are {1:.2f}'.format(
-            np.nanmin(tau13peak), np.nanmax(tau13peak)))
+        print('min/max values of peak 13CO optical depth are {0:.2f} are {1:.2f}'.format(np.nanmin(tau13peak), np.nanmax(tau13peak)))
     
     if (len(onlywrite) == 0) or ('outtau13' in onlywrite) == True:
         hd3d['datamin'] = np.nanmin(tau13).value
@@ -163,8 +175,7 @@ def lte(files = [], tfloor = 8., datainfo = '', tx_method = 'peak', onlywrite = 
     print('\nCalculating error in tau13...')
     #tau13err = (t13err/10.6)/(1/(np.exp(10.6/tex)-1)-1/(np.exp(10.6/2.73)-1))
     tau13err = (t13err*u.K/t0_13)/(1/(np.exp(t0_13/tex)-1)-1/(np.exp(t0_13/tcmb)-1))
-    print('min/max values of 13CO tau uncertainty are {0:.3f} and {1:.3f}'.format(
-        np.nanmin(tau13err), np.nanmax(tau13err)))
+    print('min/max values of 13CO tau uncertainty are {0:.3f} and {1:.3f}'.format(np.nanmin(tau13err), np.nanmax(tau13err)))
 
     if (len(onlywrite) == 0) or ('outtau13err' in onlywrite) == True:
         hdtx['datamin'] = np.nanmin(tau13err).value
@@ -197,10 +208,8 @@ def lte(files = [], tfloor = 8., datainfo = '', tx_method = 'peak', onlywrite = 
             n13ecube = (n13/tau13) * tau13err
     n13[mask3d] = float('NaN')
     n13ecube[mask3d] = float('NaN')
-    print('min/max values of N(13CO)/∆v are {0:.4E} and {1:.4E}'.format(
-        np.nanmin(n13), np.nanmax(n13)))
-    print('min/max values of N(13CO)/∆v uncertainty are {0:.4E} and {1:.4E}'.format(
-        np.nanmin(n13ecube), np.nanmax(n13ecube)))
+    print('min/max values of N(13CO)/dv are {0:.4E} and {1:.4E}'.format(np.nanmin(n13), np.nanmax(n13)))
+    print('min/max values of N(13CO)/dv uncertainty are {0:.4E} and {1:.4E}'.format(np.nanmin(n13ecube), np.nanmax(n13ecube)))
 
     # Write column density and error cubes
     if (len(onlywrite) == 0) or ('outn13cube' in onlywrite):
@@ -220,16 +229,13 @@ def lte(files = [], tfloor = 8., datainfo = '', tx_method = 'peak', onlywrite = 
 
     # Calculate integrated column density and error maps
     print('\nCalculating integrated column density and error...')
-    n13col = np.nansum(n13, axis = 0) * abs(hd3d['cdelt3']/1000.) * u.km/u.s
+    n13col = np.nansum(n13, axis = 0) * dv13 # abs(hd3d['cdelt3']/1000.) * u.km/u.s
     n13col[np.all(np.isnan(n13), axis=0)] = np.nan
     with np.errstate(all = 'ignore'):
-        n13colerr = np.sqrt(np.nansum(n13ecube**2, axis = 0)) * abs(
-            hd3d['cdelt3']/1000.) * u.km/u.s
+        n13colerr = np.sqrt(np.nansum(n13ecube**2, axis = 0)) * dv13 # abs(hd3d['cdelt3']/1000.) * u.km/u.s
         n13colerr[np.all(np.isnan(n13ecube), axis=0)] = np.nan
-    print('min/max values of N(13CO) are {0:.4E} and {1:.4E}'.format(
-        np.nanmin(n13col), np.nanmax(n13col)))
-    print('min/max values of N(13CO) uncertainty are {0:.4E} and {1:.4E}'.format(
-        np.nanmin(n13colerr), np.nanmax(n13colerr)))
+    print('min/max values of N(13CO) are {0:.4E} and {1:.4E}'.format(np.nanmin(n13col), np.nanmax(n13col)))
+    print('min/max values of N(13CO) uncertainty are {0:.4E} and {1:.4E}'.format(np.nanmin(n13colerr), np.nanmax(n13colerr)))
 
     # Write integrated column density and error maps
     if (len(onlywrite) == 0) or ('outn13col' in onlywrite):
@@ -251,8 +257,7 @@ def lte(files = [], tfloor = 8., datainfo = '', tx_method = 'peak', onlywrite = 
     print('\nCalculating signal-to-noise ratio...')
     with np.errstate(invalid = 'ignore'):
         n13snr = n13col / n13colerr
-    print('min/max values of SNR are {0:.2f} and {1:.2f}'.format(
-        np.nanmin(n13snr), np.nanmax(n13snr)))
+    print('min/max values of SNR are {0:.2f} and {1:.2f}'.format(np.nanmin(n13snr), np.nanmax(n13snr)))
 
     if (len(onlywrite) == 0) or ('outsnr13' in onlywrite):
         hd2d['datamin'] = np.nanmin(n13snr).value
@@ -261,5 +266,8 @@ def lte(files = [], tfloor = 8., datainfo = '', tx_method = 'peak', onlywrite = 
         hd2d['tfloor'] = tfloor
         fits.writeto(outsnr13, n13snr, hd2d, overwrite = True)
         print('File {0} successfully written'.format(outsnr13))
+
+    import pdb
+    pdb.set_trace()
 
 ### END OF FILE ###

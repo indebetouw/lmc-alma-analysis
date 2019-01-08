@@ -17,7 +17,7 @@ from astropy.table import Table, Column
 #from scimes import SpectralCloudstering
 
 def run_dendro(criteria=['volume'], label='mycloud', cubefile=None, mom0file=None, 
-    redo='n', **kwargs):
+               redo='n', nsigma=3., **kwargs):
 
     #%&%&%&%&%&%&%&%&%&%&%&%
     #    Make dendrogram
@@ -43,7 +43,7 @@ def run_dendro(criteria=['volume'], label='mycloud', cubefile=None, mom0file=Non
         d = Dendrogram.load_from(label+'_dendrogram.hdf5')
     else:
         print 'Make dendrogram from the full cube'
-        d = Dendrogram.compute(hdu3.data, min_value=3*sigma,
+        d = Dendrogram.compute(hdu3.data, min_value=nsigma*sigma,
             min_delta=2.5*sigma, min_npix=2*ppb, verbose = 1)
         d.save_to(label+'_dendrogram.hdf5')
 
@@ -87,7 +87,12 @@ def run_dendro(criteria=['volume'], label='mycloud', cubefile=None, mom0file=Non
         freq = hd3['RESTFRQ'] * u.Hz
     metadata['wavelength'] = freq.to(u.m,equivalencies=u.spectral())
     metadata['spatial_scale']  =  hd3['cdelt2'] * 3600. * u.arcsec
-    metadata['velocity_scale'] =  hd3['cdelt3'] * u.meter / u.second
+    if hd3['ctype3'][0:3]=='VEL' or hd3['ctype3'][0:4]=='VRAD':
+        dv=hd3['cdelt3']/1000.*u.km/u.s
+    else:
+        assert hd3['ctype3'][0:4]=='FREQ'
+        dv=2.99792458e5 *np.absolute(hd3['cdelt3'])/freq.value *u.km/u.s
+    metadata['velocity_scale'] = dv
     bmaj = hd3['bmaj']*3600. * u.arcsec # FWHM
     bmin = hd3['bmin']*3600. * u.arcsec # FWHM
     metadata['beam_major'] = bmaj
@@ -118,6 +123,38 @@ def run_dendro(criteria=['volume'], label='mycloud', cubefile=None, mom0file=Non
     cat.add_column(newcol)
 
     cat.write(label+'_full_catalog.txt', format='ascii.ecsv', overwrite=True)
+
+    #%&%&%&%&%&%&%&%&%&%&%&%&%&%
+    #   Generate the catalog with clipping
+    #%&%&%&%&%&%&%&%&%&%&%&%&%&%
+
+    ccat = ppv_catalog(d, metadata, clipping=True)
+    print ccat.info()
+
+    # Add additional properties: Average Peak Tb and Maximum Tb
+    srclist = ccat['_idx'].tolist()
+    tmax  = np.zeros(len(srclist), dtype=np.float64)
+    tpkav = np.zeros(len(srclist), dtype=np.float64)
+    for i, c in enumerate(srclist):
+        peakim = np.nanmax(hdu3.data*d[c].get_mask(), axis=0)
+        peakim[peakim==0] = np.nan
+        clmin = np.nanmin(hdu3.data*d[c].get_mask())
+        tmax[i]  = np.nanmax(peakim) - clmin
+        tpkav[i] = np.nanmean(peakim) - clmin
+    if hd3['BUNIT'].upper()=='JY/BEAM':
+        omega_B = np.pi/(4*np.log(2)) * bmaj * bmin
+        convfac = (u.Jy).to(u.K, equivalencies=u.brightness_temperature(omega_B,freq))
+        tmax *= convfac
+        tpkav *= convfac
+    newcol = Column(tmax, name='tmax-tmin')
+    newcol.unit = 'K'
+    ccat.add_column(newcol)
+    newcol = Column(tpkav, name='tpkav-tmin')
+    newcol.unit = 'K'
+    ccat.add_column(newcol)
+
+    ccat.write(label+'_full_catalog_clipped.txt', format='ascii.ecsv', overwrite=True)
+    
 
     #%&%&%&%&%&%&%&%&%&%&%&%&%&%
     #     Running SCIMES

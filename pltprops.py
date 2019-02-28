@@ -160,7 +160,7 @@ def residuals(p, data):
 # -------------------------------------------------------------------------------
 
 # Perform linear fitting using kmpfit's effective variance method
-def linefitting(x, y, xerr=None, yerr=None, xrange=[-5, 5], color='b', prob=.95):
+def linefitting(x, y, xerr=None, yerr=None, xrange=[-5, 5], color='b', prob=.95, yoffset=0):
     # Initial guess from simple linear regression
     sorted=np.argsort(x)
     b, a, rval, pval, std_err = stats.linregress(x[sorted], y[sorted])
@@ -196,11 +196,11 @@ def linefitting(x, y, xerr=None, yerr=None, xrange=[-5, 5], color='b', prob=.95)
         label="{:g}% conf.".format(prob*100))
     axes.add_patch(poly)
     # The slope
-    axes.text(0.03,0.95,'a = $%4.2f$ ' % d + u'\u00B1' + ' $%4.2f$' % 
-        f,size=10,transform=axes.transAxes)
+    axes.text(0.03,0.95-yoffset,'a = $%4.2f$ ' % d + u'\u00B1' + ' $%4.2f$' % 
+              f,size=10,transform=axes.transAxes, color=color)
     # The intercept
-    axes.text(0.03,0.90,'b = $%4.2f$ ' % c + u'\u00B1' + ' $%4.2f$' % 
-        e,size=10,transform=axes.transAxes)
+    axes.text(0.03,0.90-yoffset,'b = $%4.2f$ ' % c + u'\u00B1' + ' $%4.2f$' % 
+              e,size=10,transform=axes.transAxes,color=color)
     return
 
 # -------------------------------------------------------------------------------

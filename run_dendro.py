@@ -121,7 +121,7 @@ def run_dendro(criteria=['volume'], label='mycloud', cubefile=None, mom0file=Non
     newcol = Column(tpkav, name='tpkav')
     newcol.unit = 'K'
     cat.add_column(newcol)
-
+    
     cat.write(label+'_full_catalog.txt', format='ascii.ecsv', overwrite=True)
 
     #%&%&%&%&%&%&%&%&%&%&%&%&%&%

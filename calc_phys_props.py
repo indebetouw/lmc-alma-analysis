@@ -54,7 +54,7 @@ def clustbootstrap(sindices, svalues, meta, bootstrap,  verbose=False):
 
 
 def calc_phys_props(label='pcc_12', cubefile=None, boot_iter=400, efloor=0,
-                    alphascale=1, distpc=4.8e4, copbcor=None, conoise=None, ancfile=None, anclabel=None, verbose=False, clipping=False):
+                    alphascale=1, distpc=4.8e4, copbcor=None, conoise=None, ancfile=None, anclabel=None, verbose=False, clipping=False, co13toh2=1e6, n13cube=None):
 
     if clipping:
         clipstr="_clipped"
@@ -275,4 +275,72 @@ def calc_phys_props(label='pcc_12', cubefile=None, boot_iter=400, efloor=0,
         ptab[anclabel] = Column(ancmean, unit=anchd['BUNIT'])
         ancferr = indfac * ancrms / ancmean
         ptab['e_'+anclabel] = Column(ancferr)
+
+    from ellfit import ellfit
+    # add ellipse at half-max like in cprops
+    halfmax_ell_maj = np.zeros(len(srclist), dtype=np.float64)
+    halfmax_ell_min = np.zeros(len(srclist), dtype=np.float64)
+    halfmax_ell_pa  = np.zeros(len(srclist), dtype=np.float64)
+    if clipping:
+        tmax=cat['tmax-tmin']
+    else:
+        tmax=cat['tmax']
+    for i,c in enumerate(srclist):
+        if tmax[i]>0:
+            ind=d[c].indices()
+            half_ind_z = np.where(cube[ind]>0.5*cube[ind].max())[0]
+            z,y,x=ind
+            # unique set of 2-d indices for the 3-d clump
+            twod_id = x[half_ind_z] + y[half_ind_z]*(x[half_ind_z].max()+1)  
+
+            # half_twod_ind = np.unique(twod_id[half_ind],return_index=True)[1]
+            half_twod_ind = np.unique(twod_id,return_index=True)[1]
+            half_twod_x = x[half_twod_ind]
+            half_twod_y = y[half_twod_ind]
+        
+            halfmax_ell_maj[i],halfmax_ell_min[i],halfmax_ell_pa[i]=ellfit(half_twod_x,half_twod_y)
+
+    ptab['halfmax_ell_maj'] = Column(halfmax_ell_maj, name='halfmax_ell_maj', unit='pix')
+    ptab['halfmax_ell_min'] = Column(halfmax_ell_min, name='halfmax_ell_min', unit='pix')
+    ptab['halfmax_ell_pa']  = Column(halfmax_ell_min, name='halfmax_ell_pa', unit='rad')
+
+
+
+    # go ahead and add lte mass here to have all this in one place
+    if os.path.exists(n13cube):
+        print "adding MLTE from "+n13cube
+        srclist = ptab['_idx'].tolist()
+        newcol = Column(name="mlte", data=np.zeros(np.size(srclist)))
+        from astropy.io import fits
+        data = fits.getdata(n13cube)
+    
+        cubehdr=fits.getheader(n13cube)
+        dx=cubehdr['cdelt2']*3600/206265*dist.value # pc
+        nu0=cubehdr['restfrq']
+        if cubehdr['ctype3']=='VRAD' or cubehdr['ctype3'][0:3]=='VEL':
+            dv=cubehdr['cdelt3']/1000
+        else:
+            dnu=cubehdr['cdelt3']
+            dv=2.99792458e5 *np.absolute(dnu)/nu0
+                        
+        newcol.description = 'LTE mass using H2/13CO='+str(co13toh2)
+        for i, c in enumerate(srclist):
+            mask = d[c].get_mask()
+            if clipping:
+                cmin=np.nanmin(data[np.where(mask)])
+                newcol[i] = np.nansum(data[np.where(mask)]-cmin)
+            else:
+                newcol[i] = np.nansum(data[np.where(mask)])
+            # nansum returns zero if all are NaN, want NaN
+            chknan = np.asarray(np.isnan(data[np.where(mask)]))
+            if chknan.all():
+                newcol[i] = np.nan
+        # Multiply by channel width in km/s and area in cm^2 to get molecule number
+        newcol *= dv * (dx*3.09e18)**2
+        # Convert from molecule number to solar masses including He
+        newcol *= co13toh2 * 2 * 1.36 * 1.66e-24 / 1.99e33
+        newcol.unit = 'solMass'
+        ptab['mlte']=newcol
+
+                    
     ptab.write(label+'_physprop'+clipstr+'.txt', format='ascii.ecsv', overwrite=True)

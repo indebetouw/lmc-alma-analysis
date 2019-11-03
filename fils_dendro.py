@@ -30,7 +30,7 @@ yra=[0,800]
 
 
 #===============================
-label="allDor_12CO"
+label="allDor_12CO.new"
 cubefile="dor12coS_r1.5.fapex.trim.pbgt0.3.fits"
 mom0file="dor12coS_r1.5.fapex.trim.pbgt0.3.gtr3mJy.integrated.fits"
 mom8file="dor12coS_r1.5.fapex.trim.pbgt0.3.gtr3mJy.maximum.fits"
@@ -44,18 +44,18 @@ zelong_area=[.02,.5]  # area_pc
 boot_iter=10  # 10 for quick and dirty, 400 for tony/proper
  
 
-#===============================
-# label="allDor_13CO"
-# cubefile="Dor13co_sT1.0_smoT2.0_cutT0.01_noiseT5.0.trim.fits"
-# mom0file="Dor13co_sT1.0_smoT2.0_cutT0.01_noiseT5.0.trim.gtr3mJy.integrated.fits"
-# mom8file="Dor13co_sT1.0_smoT2.0_cutT0.01_noiseT5.0.trim.gtr3mJy.maximum.fits"
-# mom1file="Dor13co_sT1.0_smoT2.0_cutT0.01_noiseT5.0.trim.gtr10mJy.mom1.fits"
-# xra=[50,1400]
-# yra=[50,1300]
-# glob_thresh=0.07
-# zelong_tmax=1.
-# zelong_area=[.02,1]
-# boot_iter=10
+##===============================
+#label="allDor_13CO.new"
+#cubefile="Dor13co_sT1.0_smoT2.0_cutT0.01_noiseT5.0.trim.fits"
+#mom0file="Dor13co_sT1.0_smoT2.0_cutT0.01_noiseT5.0.trim.gtr3mJy.integrated.fits"
+#mom8file="Dor13co_sT1.0_smoT2.0_cutT0.01_noiseT5.0.trim.gtr3mJy.maximum.fits"
+#mom1file="Dor13co_sT1.0_smoT2.0_cutT0.01_noiseT5.0.trim.gtr10mJy.mom1.fits"
+#xra=[50,1400]
+#yra=[50,1300]
+#glob_thresh=0.07
+#zelong_tmax=1.
+#zelong_area=[.02,1]
+#boot_iter=10
 
 
 
@@ -73,7 +73,7 @@ from astropy.table import Table, Column
 from copy import copy
 
 import sys,os
-gitpaths=['/Users/remy/lustre/naasc/users/rindebet/github/lmc-alma-analysis/','/Users/remy/lustre/naasc/users/rindebet/github/FilFinder/','/Users/remy/lustre/naasc/users/rindebet/github/FilFinder/fil_finder/']
+gitpaths=['/Users/remy/lustre/naasc/users/rindebet/github-local/lmc-alma-analysis/','/Users/remy/lustre/naasc/users/rindebet/github-local/FilFinder/','/Users/remy/lustre/naasc/users/rindebet/github-local/FilFinder/fil_finder/']
 for gitpath in gitpaths:
     if not gitpath in sys.path:
         sys.path.insert(0,gitpath)
@@ -296,9 +296,12 @@ for i in range(n_elong_dendro):
 
 pl.figure(1)
 pl.contour(fils.skeleton, colors='c',linewidths=1,vmin=0,vmax=1,levels=[0.5])
+pl.xticks([])
+pl.yticks([])
 pl.figure(2)
 pl.contour(fils.skeleton, colors='c',linewidths=1,vmin=0,vmax=1,levels=[0.5])
-
+pl.xticks([])
+pl.yticks([])
 
 # need explicit X,Y coords to contour subarrays on top of full image,
 # and to match to dendro structures
@@ -437,14 +440,20 @@ goodmedmom1=[]
 goodrmsmom1=[]
 pl.clf()
 pl.imshow(mom1-pl.nanmean(mom1),origin="bottom",cmap="jet")
+pl.xticks([])
+pl.yticks([])
 pl.subplots_adjust(left=0.05,right=0.98,bottom=0.05,top=0.98)
 pl.xlim(xra)
 pl.ylim(yra)
+cbar=pl.colorbar(ticks=5*pl.frange(5)+240-pl.nanmean(mom1))
+cbar.ax.set_yticklabels(["%i km/s"%i for i in 240+5*pl.frange(5)])
+
 pl.contour(fils.skeleton, colors='c',linewidths=1,vmin=0,vmax=1,levels=[0.5])
 
 pad_size = 1
 from fil_finder.utilities import pad_image
 
+plotlabels=False
 for i in range(len(overlapping_fil_branches)):
     for fbranch in overlapping_fil_branches[i]['filbranches']:
         off=fils.array_offsets[fbranch[0]]
@@ -481,6 +490,7 @@ for ff in fils.filaments:
 
 
 
+
 orients=pl.concatenate([k.value*180/pl.pi for k in fils.orientation_branches])
 z=pl.where(pl.isnan(orients)==False)[0]
 orients=orients[z]
@@ -493,13 +503,13 @@ pl.clf()
 z=pl.where(rmsmom1>1)[0]
 n,bb=pl.histogram(pl.absolute(orients),bins=10*pl.frange(9))
 pl.plot(0.5*(bb[:-1]+bb[1:]),n,label="all branches")
-n,bb=pl.histogram(pl.absolute(goodorients),bins=10*pl.frange(9))
-pl.plot(0.5*(bb[:-1]+bb[1:]),n,label="matched to dendros")
+#n,bb=pl.histogram(pl.absolute(goodorients),bins=10*pl.frange(9))
+#pl.plot(0.5*(bb[:-1]+bb[1:]),n,label="matched to dendros")
 n,bb=pl.histogram(pl.absolute(orients[z]),bins=10*pl.frange(9))
-pl.plot(0.5*(bb[:-1]+bb[1:]),n,label="with large vel rms")
+pl.plot(0.5*(bb[:-1]+bb[1:]),n,label="vel. rms > 1 km/s")
 z=pl.where(goodrmsmom1>1)[0]
-n,bb=pl.histogram(pl.absolute(goodorients[z]),bins=10*pl.frange(9))
-pl.plot(0.5*(bb[:-1]+bb[1:]),n,label="with large vel rms and match dendro")
+#n,bb=pl.histogram(pl.absolute(goodorients[z]),bins=10*pl.frange(9))
+#pl.plot(0.5*(bb[:-1]+bb[1:]),n,label="with large vel rms and match dendro")
 pl.xlabel(" <---- aligned ---- perpendicular ---->")
 pl.legend(loc="best",prop={"size":10})
 

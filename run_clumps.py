@@ -49,7 +49,13 @@ pkmin=0.03
 sigma=0.00252
 cutoff=3.*sigma
 dTleaf=2.5*sigma
-pkmin=10*sigma 
+pkmin=10*sigma
+
+# increase the floor and see if we can get closer to dendro:
+
+cutoff=20.*sigma
+
+
 
 
 

@@ -5,9 +5,9 @@ import sys, os, pickle
 # uses the new filfinder2D (from filfind_class::fil_finder_2D)
 # also uses my version of filFinder, which has some bugs fixed:
 
-gitpaths=['/Users/remy/lustre/naasc/users/rindebet/github/lmc-alma-analysis/',
-          '/Users/remy/lustre/naasc/users/rindebet/github/FilFinder/',
-          '/Users/remy/lustre/naasc/users/rindebet/github/FilFinder/fil_finder']
+gitpaths=['/Users/remy/lustre/naasc/users/rindebet/github-local/lmc-alma-analysis/',
+          '/Users/remy/lustre/naasc/users/rindebet/github-local/FilFinder/',
+          '/Users/remy/lustre/naasc/users/rindebet/github-local/FilFinder/fil_finder']
 for gitpath in gitpaths:
     if not gitpath in sys.path:
         sys.path.insert(0,gitpath)

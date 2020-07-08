@@ -5,9 +5,9 @@ import sys, os, pickle
 # uses the new filfinder2D (from filfind_class::fil_finder_2D)
 # also uses my version of filFinder, which has some bugs fixed:
 
-gitpaths=['/Users/remy/lustre/naasc/users/rindebet/github-local/lmc-alma-analysis/',
-          '/Users/remy/lustre/naasc/users/rindebet/github-local/FilFinder/',
-          '/Users/remy/lustre/naasc/users/rindebet/github-local/FilFinder/fil_finder']
+gitpaths=['/Users/remy/local/github/lmc-alma-analysis/',
+          '/Users/remy/local/github/FilFinder/',
+          '/Users/remy/local/github/FilFinder/fil_finder']
 for gitpath in gitpaths:
     if not gitpath in sys.path:
         sys.path.insert(0,gitpath)
@@ -20,7 +20,7 @@ from scipy.signal import savgol_filter
 import pdb 
 
 def run_filfinder(label='mycloud', mom8file=None, mom0file=None, redo=False,
-                  distpc=4.8e4,xra=[0,2000],yra=[0,2000],glob_thresh=0.1):
+                  distpc=4.8e4,xra=[0,2000],yra=[0,2000],glob_thresh=0.1, adapt_beams=14):
     
     plotfiledir = label+".plots" # no trailing /
     filpropfile = label+".filprops.pkl" # phys props
@@ -51,10 +51,20 @@ def run_filfinder(label='mycloud', mom8file=None, mom0file=None, redo=False,
     # setting to 50% of the image max is too high; 20% is closer, 10% quite good
 
     bmwidth = pl.sqrt(fits_hdu.header['bmaj']*fits_hdu.header['bmin'])*3600*u.arcsec
+    # 30dor tuned parameters
+    #fils.create_mask(verbose=True, border_masking=False, 
+    #                 use_existing_mask=False,save_png=True,
+    #                 adapt_thresh=14*bmwidth, size_thresh=24*bmwidth**2,
+    #                 smooth_size=3*bmwidth, glob_thresh=pl.nanmax(fits_hdu.data)*glob_thresh)
     fils.create_mask(verbose=True, border_masking=False, 
                      use_existing_mask=False,save_png=True,
-                     adapt_thresh=14*bmwidth, size_thresh=24*bmwidth**2,
+                     adapt_thresh=adapt_beams*bmwidth, size_thresh=24*bmwidth**2,
                      smooth_size=3*bmwidth, glob_thresh=pl.nanmax(fits_hdu.data)*glob_thresh)
+    # GMC104: decreasing adapt_thresh makes more filaments but also more arcs
+    #fils.create_mask(verbose=True, border_masking=False, 
+    #                 use_existing_mask=False,save_png=True,
+    #                 adapt_thresh=5*bmwidth, size_thresh=24*bmwidth**2,
+    #                 smooth_size=3*bmwidth, glob_thresh=pl.nanmax(fits_hdu.data)*glob_thresh)
     
     fils.medskel(verbose=True,save_png=True)
     
@@ -136,11 +146,19 @@ def run_filfinder(label='mycloud', mom8file=None, mom0file=None, redo=False,
 
 
 if __name__ == "__main__":
-    distpc=4.8e4
-    label="GMC1_12CO_12m7mT"
-    mom8file = "GMC1_12CO_12m7mTPF.maximum.fits"
-    mom0file = "GMC1_12CO_12m7mTPF.mom0.fits"
-    xra=[180,850]
-    yra=[120,650]
-    glob_thresh=0.1
+    distpc=5.0e4
+    #label="GMC1_12CO_12m7mT"
+    #mom8file = "GMC1_12CO_12m7mTPF.maximum.fits"
+    #mom0file = "GMC1_12CO_12m7mTPF.mom0.fits"
+    #xra=[180,850]
+    #yra=[120,650]
+    #glob_thresh=0.1
+    #run_filfinder(label=label, mom0file=mom0file, mom8file=mom8file, xra=xra, yra=yra, glob_thresh=glob_thresh, distpc=distpc, redo=True)
+
+    label="GMC104_12CO_12m7mT"
+    mom8file = "GMC104_12CO_12m7mTPF.maximum.fits"
+    mom0file = "GMC104_12CO_12m7mTPF.integrated.fits"
+    xra=[200,620]
+    yra=[200,620]
+    glob_thresh=0.15
     run_filfinder(label=label, mom0file=mom0file, mom8file=mom8file, xra=xra, yra=yra, glob_thresh=glob_thresh, distpc=distpc, redo=True)

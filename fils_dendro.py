@@ -471,6 +471,7 @@ for i in range(len(overlapping_fil_branches)):
         assert mom1pad.shape == skels.shape
         goodrmsmom1.append(pl.nanstd(mom1pad[skels]))
 
+
 pl.savefig(label+".plots/"+label+".fils_dendro_angle_mom1.png")
 
 

@@ -17,7 +17,7 @@ from astropy.table import Table, Column
 #from scimes import SpectralCloudstering
 
 def run_dendro(criteria=['volume'], label='mycloud', cubefile=None, mom0file=None, 
-               redo='n', nsigma=3., **kwargs):
+               redo='n', nsigma=3., min_delta=2.5, min_bms=2., doplots=True, **kwargs):
 
     #%&%&%&%&%&%&%&%&%&%&%&%
     #    Make dendrogram
@@ -44,30 +44,31 @@ def run_dendro(criteria=['volume'], label='mycloud', cubefile=None, mom0file=Non
     else:
         print 'Make dendrogram from the full cube'
         d = Dendrogram.compute(hdu3.data, min_value=nsigma*sigma,
-            min_delta=2.5*sigma, min_npix=2*ppb, verbose = 1)
+            min_delta=min_delta*sigma, min_npix=min_bms*ppb, verbose = 1)
         d.save_to(label+'_dendrogram.hdf5')
 
-    # checks/creates directory to place plots
-    if os.path.isdir('plots') == 0:
-        os.makedirs('plots')
-
-    # Plot the tree
-    fig = plt.figure(figsize=(14, 8))
-    ax = fig.add_subplot(111)            
-    #ax.set_yscale('log')
-    ax.set_xlabel('Structure')
-    ax.set_ylabel('Intensity ['+hd3['BUNIT']+']')
-    p = d.plotter()
-    branch = [s for s in d.all_structures if s not in d.leaves and s not in d.trunk]
-    tronly = [s for s in d.trunk if s not in d.leaves]
-    for st in tronly:
-        p.plot_tree(ax, structure=[st], color='brown', subtree=False)
-    for st in branch:
-        p.plot_tree(ax, structure=[st], color='black', subtree=False)
-    for st in d.leaves:
-        p.plot_tree(ax, structure=[st], color='green')
-    #p.plot_tree(ax, color='black')
-    plt.savefig('plots/'+label+'_dendrogram.pdf', bbox_inches='tight')
+    if doplots:
+        # checks/creates directory to place plots
+        if os.path.isdir('plots') == 0:
+            os.makedirs('plots')
+        
+        # Plot the tree
+        fig = plt.figure(figsize=(14, 8))
+        ax = fig.add_subplot(111)            
+        #ax.set_yscale('log')
+        ax.set_xlabel('Structure')
+        ax.set_ylabel('Intensity ['+hd3['BUNIT']+']')
+        p = d.plotter()
+        branch = [s for s in d.all_structures if s not in d.leaves and s not in d.trunk]
+        tronly = [s for s in d.trunk if s not in d.leaves]
+        for st in tronly:
+            p.plot_tree(ax, structure=[st], color='brown', subtree=False)
+        for st in branch:
+            p.plot_tree(ax, structure=[st], color='black', subtree=False)
+        for st in d.leaves:
+            p.plot_tree(ax, structure=[st], color='green')
+        #p.plot_tree(ax, color='black')
+        plt.savefig('plots/'+label+'_dendrogram.pdf', bbox_inches='tight')
 
     #%&%&%&%&%&%&%&%&%&%&%&%&%&%
     #   Generate the catalog
@@ -180,99 +181,100 @@ def run_dendro(criteria=['volume'], label='mycloud', cubefile=None, mom0file=Non
     #%&%&%&%&%&%&%&%&%&%&%&%&%&%
     #     Image the trunks
     #%&%&%&%&%&%&%&%&%&%&%&%&%&%
-    print("Image the trunks")
-
-    hdu2 = fits.open(mom0file)[0]
-
-    fig = plt.figure()
-    ax = fig.add_subplot(1, 1, 1)
-    vmax = np.nanmax(hdu2.data)/2.
-    im = ax.matshow(hdu2.data, origin='lower', cmap=plt.cm.Blues, vmax=vmax)
-    ax.axes.get_xaxis().set_ticks([])
-    ax.axes.get_yaxis().set_ticks([])
-    if 'xlims' in kwargs:
-        ax.set_xlim(kwargs['xlims'])
-    if 'ylims' in kwargs:
-        ax.set_ylim(kwargs['ylims'])
-
-    # Make a trunk list
-    tronly = [s for s in d.trunk if s not in d.leaves]
-    f = open(label+'_trunks.txt', 'w')
-
-    for c in tronly:
-        f.write('{:<4d} | '.format(c.idx))
-        # Plot the actual structure boundaries
-        mask = d[c.idx].get_mask()
-        mask_coll = np.amax(mask, axis = 0)
-        plt.contour(mask_coll, colors='red', linewidths=1, levels = [0])
-        # Plot the ellipse fits
-        s = analysis.PPVStatistic(d[c.idx])
-        ellipse = s.to_mpl_ellipse(edgecolor='black', facecolor='none')
-        ax.add_patch(ellipse)
-        # Make sub-lists of descendants
-        print 'Finding descendants of trunk ',c.idx
-        desclist = []
-        if len(d[c.idx].descendants) > 0:
-            for s in d[c.idx].descendants:
-                desclist.append(s.idx)
-            desclist.sort()
-            liststr=','.join(map(str, desclist))
-            f.write(liststr)
-        f.write("\n")
-    f.close()
-
-    fig.colorbar(im, ax=ax)
-    plt.savefig('plots/'+label+'_trunks_map.pdf', bbox_inches='tight')
-    plt.close()
-
-    # Make a branch list
-    branch = [s for s in d.all_structures if s not in d.leaves and s not in d.trunk]
-    slist = []
-    for c in branch:
-        slist.append(c.idx)
-    slist.sort()
-    with open(label+'_branches.txt', 'w') as output:
-        writer = csv.writer(output)
-        for val in slist:
-            writer.writerow([val])    
-
-    #%&%&%&%&%&%&%&%&%&%&%&%&%&%
-    #     Image the leaves
-    #%&%&%&%&%&%&%&%&%&%&%&%&%&%
-    print("Image the leaves")
-
-    fig = plt.figure()
-    ax = fig.add_subplot(1, 1, 1)
-    vmax = np.nanmax(hdu2.data)/2.
-    im = ax.matshow(hdu2.data, origin='lower', cmap=plt.cm.Blues, vmax=vmax)
-    ax.axes.get_xaxis().set_ticks([])
-    ax.axes.get_yaxis().set_ticks([])
-    if 'xlims' in kwargs:
-        ax.set_xlim(kwargs['xlims'])
-    if 'ylims' in kwargs:
-        ax.set_ylim(kwargs['ylims'])
-
-    # Make a leaf list
-    slist = []
-    for c in d.leaves:
-        slist.append(c.idx)
-        # Plot the actual structure boundaries
-        mask = d[c.idx].get_mask()
-        mask_coll = np.amax(mask, axis = 0)
-        plt.contour(mask_coll, colors='green', linewidths=1, levels = [0])
-        # Plot the ellipse fits
-        s = analysis.PPVStatistic(d[c.idx])
-        ellipse = s.to_mpl_ellipse(edgecolor='black', facecolor='none')
-        ax.add_patch(ellipse)
-    slist.sort()
-    with open(label+'_leaves.txt', "w") as output:
-        writer = csv.writer(output)
-        for val in slist:
-            writer.writerow([val])    
-
-    fig.colorbar(im, ax=ax)
-    plt.savefig('plots/'+label+'_leaves_map.pdf', bbox_inches='tight')
-    plt.close()
+    if doplots:
+        print("Image the trunks")
+        
+        hdu2 = fits.open(mom0file)[0]
+        
+        fig = plt.figure()
+        ax = fig.add_subplot(1, 1, 1)
+        vmax = np.nanmax(hdu2.data)/2.
+        im = ax.matshow(hdu2.data, origin='lower', cmap=plt.cm.Blues, vmax=vmax)
+        ax.axes.get_xaxis().set_ticks([])
+        ax.axes.get_yaxis().set_ticks([])
+        if 'xlims' in kwargs:
+            ax.set_xlim(kwargs['xlims'])
+        if 'ylims' in kwargs:
+            ax.set_ylim(kwargs['ylims'])
+        
+        # Make a trunk list
+        tronly = [s for s in d.trunk if s not in d.leaves]
+        f = open(label+'_trunks.txt', 'w')
+        
+        for c in tronly:
+            f.write('{:<4d} | '.format(c.idx))
+            # Plot the actual structure boundaries
+            mask = d[c.idx].get_mask()
+            mask_coll = np.amax(mask, axis = 0)
+            plt.contour(mask_coll, colors='red', linewidths=1, levels = [0])
+            # Plot the ellipse fits
+            s = analysis.PPVStatistic(d[c.idx])
+            ellipse = s.to_mpl_ellipse(edgecolor='black', facecolor='none')
+            ax.add_patch(ellipse)
+            # Make sub-lists of descendants
+            print 'Finding descendants of trunk ',c.idx
+            desclist = []
+            if len(d[c.idx].descendants) > 0:
+                for s in d[c.idx].descendants:
+                    desclist.append(s.idx)
+                desclist.sort()
+                liststr=','.join(map(str, desclist))
+                f.write(liststr)
+            f.write("\n")
+        f.close()
+        
+        fig.colorbar(im, ax=ax)
+        plt.savefig('plots/'+label+'_trunks_map.pdf', bbox_inches='tight')
+        plt.close()
+        
+        # Make a branch list
+        branch = [s for s in d.all_structures if s not in d.leaves and s not in d.trunk]
+        slist = []
+        for c in branch:
+            slist.append(c.idx)
+        slist.sort()
+        with open(label+'_branches.txt', 'w') as output:
+            writer = csv.writer(output)
+            for val in slist:
+                writer.writerow([val])    
+        
+        #%&%&%&%&%&%&%&%&%&%&%&%&%&%
+        #     Image the leaves
+        #%&%&%&%&%&%&%&%&%&%&%&%&%&%
+        print("Image the leaves")
+        
+        fig = plt.figure()
+        ax = fig.add_subplot(1, 1, 1)
+        vmax = np.nanmax(hdu2.data)/2.
+        im = ax.matshow(hdu2.data, origin='lower', cmap=plt.cm.Blues, vmax=vmax)
+        ax.axes.get_xaxis().set_ticks([])
+        ax.axes.get_yaxis().set_ticks([])
+        if 'xlims' in kwargs:
+            ax.set_xlim(kwargs['xlims'])
+        if 'ylims' in kwargs:
+            ax.set_ylim(kwargs['ylims'])
+        
+        # Make a leaf list
+        slist = []
+        for c in d.leaves:
+            slist.append(c.idx)
+            # Plot the actual structure boundaries
+            mask = d[c.idx].get_mask()
+            mask_coll = np.amax(mask, axis = 0)
+            plt.contour(mask_coll, colors='green', linewidths=1, levels = [0])
+            # Plot the ellipse fits
+            s = analysis.PPVStatistic(d[c.idx])
+            ellipse = s.to_mpl_ellipse(edgecolor='black', facecolor='none')
+            ax.add_patch(ellipse)
+        slist.sort()
+        with open(label+'_leaves.txt', "w") as output:
+            writer = csv.writer(output)
+            for val in slist:
+                writer.writerow([val])    
+        
+        fig.colorbar(im, ax=ax)
+        plt.savefig('plots/'+label+'_leaves_map.pdf', bbox_inches='tight')
+        plt.close()
 
     #%&%&%&%&%&%&%&%&%&%&%&%&%&%
     #     Image the clusters

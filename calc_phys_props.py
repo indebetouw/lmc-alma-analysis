@@ -49,7 +49,7 @@ def clustbootstrap(sindices, svalues, meta, bootstrap,  verbose=False):
         emomvs.append(bstats.v_rms.value)
         eflux.append(bstats.flux.value)
         pa.append(bstats.position_angle.value)
-        if verbose: print bootit,"/",bootiters.max()
+        if verbose: print(bootit,"/",bootiters.max())
     return emmajs, emmins, emomvs, eflux, pa
 
 
@@ -139,7 +139,7 @@ def calc_phys_props(label='pcc_12', cubefile=None, boot_iter=400, efloor=0,
 
     
     for j, clust in enumerate(srclist):
-        if verbose: print "   cl",j,"/",len(srclist)
+        if verbose: print("   cl",j,"/",len(srclist))
         asgn = np.zeros(cube.shape)
         asgn[d[clust].get_mask(shape = asgn.shape)] = 1
         sindices = np.where(asgn == 1)
@@ -309,7 +309,7 @@ def calc_phys_props(label='pcc_12', cubefile=None, boot_iter=400, efloor=0,
     # go ahead and add lte mass here to have all this in one place
     if n13cube!=None:
        if os.path.exists(n13cube):
-           print "adding MLTE from "+n13cube
+           print("adding MLTE from "+n13cube)
            srclist = ptab['_idx'].tolist()
            newcol = Column(name="mlte", data=np.zeros(np.size(srclist)))
            from astropy.io import fits

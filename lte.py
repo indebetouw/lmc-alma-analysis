@@ -62,7 +62,7 @@ def lte(files = [], tfloor = 8., datainfo = '', tx_method = 'peak', onlywrite = 
     KtoJybm12= 8.185e-7* hd3d['bmaj']*hd3d['bmin']*3600**2 * (freq12.value/1e9)**2
     if hd3d['bunit']=="Jy/beam":
         t12cube=t12cube/KtoJybm12
-    if hd3d['ctype3'][0:3]=='VEL':
+    if hd3d['ctype3'][0:3]=='VEL' or hd3d['ctype3'][0:4]=='VRAD':
         dv12=hd3d['cdelt3']/1000.*u.km/u.s
     else:
         assert hd3d['ctype3'][0:4]=='FREQ'

@@ -1,0 +1,60 @@
+See calling/ for example usage.
+
+-------------------
+run_dendro(criteria=['volume'], label='mycloud', cubefile=None, flatfile=None, 
+               redo='n', nsigma=3., min_delta=2.5, min_bms=2., doplots=True)
+	       position_dependent_noise=False
+if redo!='n':
+sigma=std from MAD
+calculate Dendro and save to label+'_dendrogram.hdf5'
+   min_value=nsigma*sigma, min_delta=min_delta*sigma, min_npix=min_bms*ppb
+
+[dendro2016] min_value=2*sigma,min_delta=2*sigma
+
+create plots/ subdir and put plots there
+generate ppv_catalog and save to label+'_full_catalog.txt'
+generate ppv_catalog with clipping > label+'_full_catalog_clipped.txt'
+
+-------------------
+def lte(files = [], tfloor = 8., datainfo = '', tx_method = 'peak', onlywrite = [], indir = ''):
+    # files are in this order: [incube12, incube13, inrms12, inrms13, inmask12]
+    # tx_methods accounted for are 'cube' and 'peak'
+    # datainfo should provide info on what source data is from and possibly a number corresponding to some form of iteration
+
+so this takes the input files explicitly, e.g.
+lte(files=[region+"_12co"+root+".fits",region+"_13co"+root+".fits",region+"_12co"+root+".rms.fits",region+"_13co"+root+".rms.fits",region+"_12co"+root+".mask.fits"],datainfo=region)
+
+outn13cube    = datainfo + '_' + tx_method + '_n13cube.fits.gz'
+
+# for some reason creating gzipped fits files works whereas unzipped doesn't
+
+-------------------
+def calc_phys_props(label='pcc_12', cubefile=None, boot_iter=400, efloor=0,
+                    alphascale=1, distpc=4.8e4, copbcor=None, conoise=None,
+		    ancfile=None, anclabel=None, verbose=False,
+		    clipping=False, co13toh2=1e6, n13cube=None):
+
+expects these to exist:
+    d = Dendrogram.load_from(label+'_dendrogram.hdf5')
+    cat = Table.read(label+'_full_catalog'+clipstr+'.txt', format='ascii.ecsv')
+writes
+    ptab.write(label+'_physprop'+clipstr+'.txt', format='ascii.ecsv')
+copbcor and conoise used for
+            tb12[j]  = np.nansum(asgn * cube12)
+            eflux[j] = indfac * np.sqrt(np.nansum(asgn * ecube12**2)) / tb12[j]
+ancfile used for ancmean and ancrms
+    alphaco = 4.3 * u.solMass * u.s / (u.K * u.km * u.pc**2) # Bolatto+ 13
+alphascale applied to alphaco
+
+---------------------
+def run_filfinder(label='mycloud', mom8file=None, mom0file=None, redo=False,
+                  distpc=4.8e4,xra=[0,1100],yra=[0,600],glob_thresh=0.1, adapt_beams=14):
+
+writes to fil_plots/
+label+".filprops.pkl"
+
+--------------------
+
+
+
+

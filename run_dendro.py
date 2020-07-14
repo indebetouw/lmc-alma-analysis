@@ -16,14 +16,22 @@ from astropy.io import fits
 from astropy.table import Table, Column
 #from scimes import SpectralCloudstering
 
-def run_dendro(criteria=['volume'], label='mycloud', cubefile=None, mom0file=None, 
-               redo='n', nsigma=3., min_delta=2.5, min_bms=2., doplots=True, **kwargs):
+def run_dendro(label='mycloud', cubefile=None, flatfile=None, 
+               redo='n', nsigma=3., min_delta=2.5, min_bms=2.,
+               position_dependent_noise=False, # will use rms map in dendro
+               criteria=['volume'], # for SCIMES
+               doplots=True,
+               dendro_in=None, # use this instead of re-loading
+               **kwargs):
+
+    global cubedata,rmsmap,threshold_sigma
 
     #%&%&%&%&%&%&%&%&%&%&%&%
     #    Make dendrogram
     #%&%&%&%&%&%&%&%&%&%&%&%
     hdu3 = fits.open(cubefile)[0]
     hd3 = hdu3.header
+    cubedata = hdu3.data
 
     # Deal with oddities in 30 Dor cube
     if hd3['NAXIS'] == 3:
@@ -33,24 +41,41 @@ def run_dendro(criteria=['volume'], label='mycloud', cubefile=None, mom0file=Non
 
     # Get cube parameters
     sigma = stats.mad_std(hdu3.data[~np.isnan(hdu3.data)])
-    print 'Robustly estimated RMS: ',sigma
+    print('Robustly estimated RMS: ',sigma)
     ppb = 1.133*hd3['bmaj']*hd3['bmin']/(abs(hd3['cdelt1']*hd3['cdelt2']))
-    print 'Pixels per beam: ',ppb
+    print('Pixels per beam: ',ppb)
 
     # Make the dendrogram if not present or redo=y
-    if redo == 'n' and os.path.isfile(label+'_dendrogram.hdf5'):
-        print 'Loading pre-existing dendrogram'
-        d = Dendrogram.load_from(label+'_dendrogram.hdf5')
+    if position_dependent_noise:
+        dendrofile='dendro_dendrogram_rmsmap.hdf5'
     else:
-        print 'Make dendrogram from the full cube'
-        d = Dendrogram.compute(hdu3.data, min_value=nsigma*sigma,
-            min_delta=min_delta*sigma, min_npix=min_bms*ppb, verbose = 1)
-        d.save_to(label+'_dendrogram.hdf5')
+        dendrofile='dendro_dendrogram.hdf5'
+
+    if dendro_in!=None:
+        d = dendro_in
+    elif redo == 'n' and os.path.isfile(dendrofile):
+        print('Loading pre-existing dendrogram')
+        d = Dendrogram.load_from(dendrofile)
+    else:
+        print('Make dendrogram from the full cube')
+        if position_dependent_noise:
+            mask3d = cubedata<3*sigma
+            rmsmap = np.nanstd(cubedata*mask3d,axis=0) # assumes spectral 1st
+            threshold_sigma = min_delta # for custom_independent function
+            d = Dendrogram.compute(hdu3.data, min_value=nsigma*sigma,
+                                   min_delta=min_delta*sigma,
+                                   min_npix=min_bms*ppb, verbose = 1,
+                                   is_independent=custom_independent)
+        else:
+            d = Dendrogram.compute(hdu3.data, min_value=nsigma*sigma,
+                                   min_delta=min_delta*sigma,
+                                   min_npix=min_bms*ppb, verbose = 1)
+        d.save_to(dendrofile)
 
     if doplots:
         # checks/creates directory to place plots
-        if os.path.isdir('plots') == 0:
-            os.makedirs('plots')
+        if os.path.isdir('dendro_plots') == 0:
+            os.makedirs('dendro_plots')
         
         # Plot the tree
         fig = plt.figure(figsize=(14, 8))
@@ -68,19 +93,19 @@ def run_dendro(criteria=['volume'], label='mycloud', cubefile=None, mom0file=Non
         for st in d.leaves:
             p.plot_tree(ax, structure=[st], color='green')
         #p.plot_tree(ax, color='black')
-        plt.savefig('plots/'+label+'_dendrogram.pdf', bbox_inches='tight')
+        plt.savefig('dendro_plots/'+label+'_dendrogram.pdf', bbox_inches='tight')
 
     #%&%&%&%&%&%&%&%&%&%&%&%&%&%
     #   Generate the catalog
     #%&%&%&%&%&%&%&%&%&%&%&%&%&%
-    print "Generate a catalog of dendrogram structures"
+    print("Generate a catalog of dendrogram structures")
     metadata = {}
     if hd3['BUNIT'].upper()=='JY/BEAM':
         metadata['data_unit'] = u.Jy / u.beam
     elif hd3['BUNIT'].upper()=='K':
         metadata['data_unit'] = u.K
     else:
-        print "Warning: Unrecognized brightness unit"
+        print("Warning: Unrecognized brightness unit")
     metadata['vaxis'] = 0
     if 'RESTFREQ' in hd3.keys():
         freq = hd3['RESTFREQ'] * u.Hz
@@ -99,62 +124,66 @@ def run_dendro(criteria=['volume'], label='mycloud', cubefile=None, mom0file=Non
     metadata['beam_major'] = bmaj
     metadata['beam_minor'] = bmin
 
-    cat = ppv_catalog(d, metadata)
-    print cat.info()
-
-    # Add additional properties: Average Peak Tb and Maximum Tb
-    srclist = cat['_idx'].tolist()
-    tmax  = np.zeros(len(srclist), dtype=np.float64)
-    tpkav = np.zeros(len(srclist), dtype=np.float64)
-    for i, c in enumerate(srclist):
-        peakim = np.nanmax(hdu3.data*d[c].get_mask(), axis=0)
-        peakim[peakim==0] = np.nan
-        tmax[i]  = np.nanmax(peakim)
-        tpkav[i] = np.nanmean(peakim)
-    if hd3['BUNIT'].upper()=='JY/BEAM':
-        omega_B = np.pi/(4*np.log(2)) * bmaj * bmin
-        convfac = (u.Jy).to(u.K, equivalencies=u.brightness_temperature(omega_B,freq))
-        tmax *= convfac
-        tpkav *= convfac
-    newcol = Column(tmax, name='tmax')
-    newcol.unit = 'K'
-    cat.add_column(newcol)
-    newcol = Column(tpkav, name='tpkav')
-    newcol.unit = 'K'
-    cat.add_column(newcol)
-    
-    cat.write(label+'_full_catalog.txt', format='ascii.ecsv', overwrite=True)
+    if not( redo=="n" and os.path.exists(label+'_full_catalog.txt')):
+        print("generating catalog")
+        cat = ppv_catalog(d, metadata)
+        print(cat.info())
+        
+        # Add additional properties: Average Peak Tb and Maximum Tb
+        srclist = cat['_idx'].tolist()
+        tmax  = np.zeros(len(srclist), dtype=np.float64)
+        tpkav = np.zeros(len(srclist), dtype=np.float64)
+        for i, c in enumerate(srclist):
+            peakim = np.nanmax(hdu3.data*d[c].get_mask(), axis=0)
+            peakim[peakim==0] = np.nan
+            tmax[i]  = np.nanmax(peakim)
+            tpkav[i] = np.nanmean(peakim)
+        if hd3['BUNIT'].upper()=='JY/BEAM':
+            omega_B = np.pi/(4*np.log(2)) * bmaj * bmin
+            convfac = (u.Jy).to(u.K, equivalencies=u.brightness_temperature(omega_B,freq))
+            tmax *= convfac
+            tpkav *= convfac
+        newcol = Column(tmax, name='tmax')
+        newcol.unit = 'K'
+        cat.add_column(newcol)
+        newcol = Column(tpkav, name='tpkav')
+        newcol.unit = 'K'
+        cat.add_column(newcol)
+        
+        cat.write(label+'_full_catalog.txt', format='ascii.ecsv', overwrite=True)
 
     #%&%&%&%&%&%&%&%&%&%&%&%&%&%
     #   Generate the catalog with clipping
     #%&%&%&%&%&%&%&%&%&%&%&%&%&%
 
-    ccat = ppv_catalog(d, metadata, clipping=True)
-    print ccat.info()
-
-    # Add additional properties: Average Peak Tb and Maximum Tb
-    srclist = ccat['_idx'].tolist()
-    tmax  = np.zeros(len(srclist), dtype=np.float64)
-    tpkav = np.zeros(len(srclist), dtype=np.float64)
-    for i, c in enumerate(srclist):
-        peakim = np.nanmax(hdu3.data*d[c].get_mask(), axis=0)
-        peakim[peakim==0] = np.nan
-        clmin = np.nanmin(hdu3.data*d[c].get_mask())
-        tmax[i]  = np.nanmax(peakim) - clmin
-        tpkav[i] = np.nanmean(peakim) - clmin
-    if hd3['BUNIT'].upper()=='JY/BEAM':
-        omega_B = np.pi/(4*np.log(2)) * bmaj * bmin
-        convfac = (u.Jy).to(u.K, equivalencies=u.brightness_temperature(omega_B,freq))
-        tmax *= convfac
-        tpkav *= convfac
-    newcol = Column(tmax, name='tmax-tmin')
-    newcol.unit = 'K'
-    ccat.add_column(newcol)
-    newcol = Column(tpkav, name='tpkav-tmin')
-    newcol.unit = 'K'
-    ccat.add_column(newcol)
-
-    ccat.write(label+'_full_catalog_clipped.txt', format='ascii.ecsv', overwrite=True)
+    if not( redo=="n" and os.path.exists(label+'_full_catalog_clipped.txt')):
+        print("generating clipped catalog")
+        ccat = ppv_catalog(d, metadata, clipping=True)
+        print(ccat.info())
+    
+        # Add additional properties: Average Peak Tb and Maximum Tb
+        srclist = ccat['_idx'].tolist()
+        tmax  = np.zeros(len(srclist), dtype=np.float64)
+        tpkav = np.zeros(len(srclist), dtype=np.float64)
+        for i, c in enumerate(srclist):
+            peakim = np.nanmax(hdu3.data*d[c].get_mask(), axis=0)
+            peakim[peakim==0] = np.nan
+            clmin = np.nanmin(hdu3.data*d[c].get_mask())
+            tmax[i]  = np.nanmax(peakim) - clmin
+            tpkav[i] = np.nanmean(peakim) - clmin
+        if hd3['BUNIT'].upper()=='JY/BEAM':
+            omega_B = np.pi/(4*np.log(2)) * bmaj * bmin
+            convfac = (u.Jy).to(u.K, equivalencies=u.brightness_temperature(omega_B,freq))
+            tmax *= convfac
+            tpkav *= convfac
+        newcol = Column(tmax, name='tmax-tmin')
+        newcol.unit = 'K'
+        ccat.add_column(newcol)
+        newcol = Column(tpkav, name='tpkav-tmin')
+        newcol.unit = 'K'
+        ccat.add_column(newcol)
+    
+        ccat.write(label+'_full_catalog_clipped.txt', format='ascii.ecsv', overwrite=True)
     
 
     #%&%&%&%&%&%&%&%&%&%&%&%&%&%
@@ -162,11 +191,11 @@ def run_dendro(criteria=['volume'], label='mycloud', cubefile=None, mom0file=Non
     #%&%&%&%&%&%&%&%&%&%&%&%&%&%
 #     print("Running SCIMES")
 #     dclust = SpectralCloudstering(d, cat, criteria = criteria, keepall=True)
-#     print dclust.clusters
+#     print(dclust.clusters)
 # 
 #     print("Visualize the clustered dendrogram")
 #     dclust.showdendro()
-#     plt.savefig('plots/'+label+'_clusters_tree.pdf')
+#     plt.savefig('dendro_plots/'+label+'_clusters_tree.pdf')
 # 
 #     print("Produce the assignment cube")
 #     dclust.asgncube(hd3)
@@ -184,7 +213,7 @@ def run_dendro(criteria=['volume'], label='mycloud', cubefile=None, mom0file=Non
     if doplots:
         print("Image the trunks")
         
-        hdu2 = fits.open(mom0file)[0]
+        hdu2 = fits.open(flatfile)[0]
         
         fig = plt.figure()
         ax = fig.add_subplot(1, 1, 1)
@@ -212,7 +241,7 @@ def run_dendro(criteria=['volume'], label='mycloud', cubefile=None, mom0file=Non
             ellipse = s.to_mpl_ellipse(edgecolor='black', facecolor='none')
             ax.add_patch(ellipse)
             # Make sub-lists of descendants
-            print 'Finding descendants of trunk ',c.idx
+            print('Finding descendants of trunk ',c.idx)
             desclist = []
             if len(d[c.idx].descendants) > 0:
                 for s in d[c.idx].descendants:
@@ -224,7 +253,7 @@ def run_dendro(criteria=['volume'], label='mycloud', cubefile=None, mom0file=Non
         f.close()
         
         fig.colorbar(im, ax=ax)
-        plt.savefig('plots/'+label+'_trunks_map.pdf', bbox_inches='tight')
+        plt.savefig('dendro_plots/'+label+'_trunks_map.pdf', bbox_inches='tight')
         plt.close()
         
         # Make a branch list
@@ -273,7 +302,7 @@ def run_dendro(criteria=['volume'], label='mycloud', cubefile=None, mom0file=Non
                 writer.writerow([val])    
         
         fig.colorbar(im, ax=ax)
-        plt.savefig('plots/'+label+'_leaves_map.pdf', bbox_inches='tight')
+        plt.savefig('dendro_plots/'+label+'_leaves_map.pdf', bbox_inches='tight')
         plt.close()
 
     #%&%&%&%&%&%&%&%&%&%&%&%&%&%
@@ -314,7 +343,7 @@ def run_dendro(criteria=['volume'], label='mycloud', cubefile=None, mom0file=Non
 #         ellipse = s.to_mpl_ellipse(edgecolor='black', facecolor='none')
 #         ax.add_patch(ellipse)
 #         # Make sub-lists of descendants
-#         print 'Finding descendants of cluster ',c
+#         print('Finding descendants of cluster ',c)
 #         desclist = []
 #         if len(d[c].descendants) > 0:
 #             for s in d[c].descendants:
@@ -326,12 +355,28 @@ def run_dendro(criteria=['volume'], label='mycloud', cubefile=None, mom0file=Non
 #     f.close()
 # 
 #     fig.colorbar(im, ax=ax)
-#     plt.savefig('plots/'+label+'_clusters_map.pdf', bbox_inches='tight')
+#     plt.savefig(label+'_plots/'+label+'_clusters_map.pdf', bbox_inches='tight')
 #     plt.close()
 # 
 #     return
 
 # -------------------------------------------------------------------------------
+
+def custom_independent(structure,index=None, value=None):
+    global cubedata,rmsmap,threshold_sigma
+    mom0=0.
+    momx=0.
+    momy=0.
+    ind=structure.indices()
+    for i in range(len(ind[0])):
+        v=cubedata[ind[0][i],ind[1][i],ind[2][i]]
+        mom0=mom0+v
+        momx=momx+v*ind[2][i]
+        momy=momy+v*ind[1][i]
+    momx=int(round(momx/mom0))
+    momy=int(round(momy/mom0))
+    return structure.values(subtree=True).max() > (threshold_sigma*rmsmap[momy,momx])
+
 
 def explore_dendro(label='mycloud', xaxis='radius', yaxis='v_rms'):
     d = Dendrogram.load_from(label+'_dendrogram.hdf5')
@@ -345,4 +390,4 @@ def explore_dendro(label='mycloud', xaxis='radius', yaxis='v_rms'):
 # -------------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    run_dendro(label=sys.argv[1], cubefile=sys.argv[2], mom0file=sys.argv[3])
+    run_dendro(label=sys.argv[1], cubefile=sys.argv[2], flatfile=sys.argv[3])

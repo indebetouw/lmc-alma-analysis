@@ -250,7 +250,7 @@ pl.yticks([])
 
 
 
-pl.savefig(label+".plots/"+label+".fils_velfield.png")
+pl.savefig("fil_plots/"+label+".fils_velfield.png")
 
 
 

@@ -267,7 +267,5 @@ def lte(files = [], tfloor = 8., datainfo = '', tx_method = 'peak', onlywrite = 
         fits.writeto(outsnr13, n13snr, hd2d, overwrite = True)
         print('File {0} successfully written'.format(outsnr13))
 
-    import pdb
-    pdb.set_trace()
 
 ### END OF FILE ###

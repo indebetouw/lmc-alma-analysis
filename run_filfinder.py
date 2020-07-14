@@ -22,14 +22,14 @@ import pdb
 def run_filfinder(label='mycloud', mom8file=None, mom0file=None, redo=False,
                   distpc=4.8e4,xra=[0,2000],yra=[0,2000],glob_thresh=0.1, adapt_beams=14):
     
-    plotfiledir = label+".plots" # no trailing /
-    filpropfile = label+".filprops.pkl" # phys props
+    plotfiledir = "fil_plots" # no trailing /
+    # filpropfile = label+".filprops.pkl" # phys props
     
     fits_hdu = fits.open(mom8file)[0]    
     # setting beamwidth will have no effect if a fits header is given
     fils=FilFinder2D(fits_hdu, distance=distpc*u.pc)
     
-    fils.save_name=plotfiledir+"/"+plotfiledir
+    fils.save_name=plotfiledir+"/"+label
     if not os.path.exists(plotfiledir):
         os.mkdir(plotfiledir)
         redo=True
@@ -68,7 +68,7 @@ def run_filfinder(label='mycloud', mom8file=None, mom0file=None, redo=False,
     
     fils.medskel(verbose=True,save_png=True)
     
-    print "calling analyze_skeletons"
+    print("calling analyze_skeletons")
     # 30dor:
     # fils.branch_thresh=200 # typical lengths are 1-100
     # raise from 10 to 30 to elminate more little things

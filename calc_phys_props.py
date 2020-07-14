@@ -10,6 +10,7 @@ from astropy.table import Table, Column
 from astropy.io.fits import getdata
 from astropy.stats import mad_std
 from matplotlib import pyplot as plt
+from astropy.io import fits
 
 '''
 PURPOSE: Create the physprop.txt table from the dendrogram catalog.
@@ -53,8 +54,12 @@ def clustbootstrap(sindices, svalues, meta, bootstrap,  verbose=False):
     return emmajs, emmins, emomvs, eflux, pa
 
 
-def calc_phys_props(label='pcc_12', cubefile=None, boot_iter=400, efloor=0,
-                    alphascale=1, distpc=4.8e4, copbcor=None, conoise=None, ancfile=None, anclabel=None, verbose=False, clipping=False, co13toh2=1e6, n13cube=None):
+def calc_phys_props(label='pcc_12', cubefile=None, dendrofile=None,
+                    boot_iter=400, efloor=0,
+                    alphascale=1, distpc=4.8e4, copbcor=None, conoise=None,
+                    ancfile=None, anclabel=None, verbose=False, clipping=False,
+                    co13toh2=1e6, n13cube=None, n13errcube=None,
+                    dendro_in=None):
 
     if clipping:
         clipstr="_clipped"
@@ -68,7 +73,14 @@ def calc_phys_props(label='pcc_12', cubefile=None, boot_iter=400, efloor=0,
     asarea  = (as2*dist**2).to(u.pc**2,equivalencies=u.dimensionless_angles())
 
     # ---- load the dendrogram and catalog
-    d = Dendrogram.load_from(label+'_dendrogram.hdf5')
+    if dendrofile==None:
+        dendrofile=label+'_dendrogram.hdf5'
+
+    if dendro_in!=None:
+        d = dendro_in
+    elif os.path.isfile(dendrofile):
+        print('Loading pre-existing dendrogram')
+        d = Dendrogram.load_from(dendrofile)
     cat = Table.read(label+'_full_catalog'+clipstr+'.txt', format='ascii.ecsv')
     srclist = cat['_idx'].tolist()
 
@@ -135,10 +147,15 @@ def calc_phys_props(label='pcc_12', cubefile=None, boot_iter=400, efloor=0,
     # ---- call the bootstrapping routine
     emaj, emin, epa, evrms, errms, eaxra, eflux, emvir, eemvir, ealpha, tb12, ancmean, ancrms = [
         np.zeros(len(srclist)) for _ in range(13)]
-    print("Calculating property errors...")
-
+    print("Calculating property errors... with %i iterations"%boot_iter)
+    print("....................\r",end='')
+    nsrc=len(srclist)
+    nsrcd=nsrc//20
     
     for j, clust in enumerate(srclist):
+        if j%nsrcd==0 and j>0:
+            print("+"*(j//nsrcd)+"."*((nsrc-j)//nsrcd)+"\r",end='')
+                
         if verbose: print("   cl",j,"/",len(srclist))
         asgn = np.zeros(cube.shape)
         asgn[d[clust].get_mask(shape = asgn.shape)] = 1
@@ -194,6 +211,7 @@ def calc_phys_props(label='pcc_12', cubefile=None, boot_iter=400, efloor=0,
                 ancmean[j] = np.nanmean(ancdata*asgn)
                 ancrms[j] = np.sqrt(np.nanmean((ancdata*asgn)**2)-ancmean[j]**2)
 
+    print()
     # ---- report the median uncertainties
     print( "The median fractional error in rad_pc is {:2.4f}"
         .format(np.nanmedian(errms)) )
@@ -308,40 +326,59 @@ def calc_phys_props(label='pcc_12', cubefile=None, boot_iter=400, efloor=0,
 
     # go ahead and add lte mass here to have all this in one place
     if n13cube!=None:
-       if os.path.exists(n13cube):
-           print("adding MLTE from "+n13cube)
-           srclist = ptab['_idx'].tolist()
-           newcol = Column(name="mlte", data=np.zeros(np.size(srclist)))
-           from astropy.io import fits
-           data = fits.getdata(n13cube)
-       
-           cubehdr=fits.getheader(n13cube)
-           dx=cubehdr['cdelt2']*3600/206265*dist.value # pc
-           nu0=cubehdr['restfrq']
-           if cubehdr['ctype3']=='VRAD' or cubehdr['ctype3'][0:3]=='VEL':
-               dv=cubehdr['cdelt3']/1000
-           else:
-               dnu=cubehdr['cdelt3']
-               dv=2.99792458e5 *np.absolute(dnu)/nu0
-                           
-           newcol.description = 'LTE mass using H2/13CO='+str(co13toh2)
-           for i, c in enumerate(srclist):
-               mask = d[c].get_mask()
-               if clipping:
-                   cmin=np.nanmin(data[np.where(mask)])
-                   newcol[i] = np.nansum(data[np.where(mask)]-cmin)
-               else:
-                   newcol[i] = np.nansum(data[np.where(mask)])
-               # nansum returns zero if all are NaN, want NaN
-               chknan = np.asarray(np.isnan(data[np.where(mask)]))
-               if chknan.all():
-                   newcol[i] = np.nan
-           # Multiply by channel width in km/s and area in cm^2 to get molecule number
-           newcol *= dv * (dx*3.09e18)**2
-           # Convert from molecule number to solar masses including He
-           newcol *= co13toh2 * 2 * 1.36 * 1.66e-24 / 1.99e33
-           newcol.unit = 'solMass'
-           ptab['mlte']=newcol
+        if os.path.exists(n13cube):
+            print("adding MLTE from "+n13cube)
+            srclist = ptab['_idx'].tolist()
+            newcol = Column(name="mlte", data=np.zeros(np.size(srclist)))
+            data = fits.getdata(n13cube)
 
-                    
+            cubehdr=fits.getheader(n13cube)
+            dx=cubehdr['cdelt2']*3600/206265*dist.value # pc
+            nu0=cubehdr['restfrq']
+            if cubehdr['ctype3']=='VRAD' or cubehdr['ctype3'][0:3]=='VEL':
+                dv=cubehdr['cdelt3']/1000
+            else:
+                dnu=cubehdr['cdelt3']
+                dv=2.99792458e5 *np.absolute(dnu)/nu0
+                           
+            newcol.description = 'LTE mass using H2/13CO='+str(co13toh2)
+            if os.path.exists(n13errcube):
+                e_newcol = Column(name="e_mlte", data=np.zeros(np.size(srclist)))
+                uncert2 = fits.getdata(n13errcube)**2
+                e_newcol.description = 'LTE mass uncert.'
+               
+            for i, c in enumerate(srclist):
+                mask = d[c].get_mask()
+                if clipping:
+                    cmin=np.nanmin(data[np.where(mask)])
+                    newcol[i] = np.nansum(data[np.where(mask)]-cmin)
+                else:
+                    newcol[i] = np.nansum(data[np.where(mask)])
+                # nansum returns zero if all are NaN, want NaN
+                chknan = np.asarray(np.isnan(data[np.where(mask)]))
+                if chknan.all():
+                    newcol[i] = np.nan
+
+                if os.path.exists(n13errcube):
+                    e_newcol[i] = np.nansum(uncert2[np.where(mask)])
+                    # nansum returns zero if all are NaN, want NaN
+                    chknan = np.asarray(np.isnan(uncert2[np.where(mask)]))
+                    if chknan.all():
+                        e_newcol[i] = np.nan
+
+            # Multiply by channel width in km/s and area in cm^2 to get molecule number
+            newcol *= dv * (dx*3.09e18)**2
+            # Convert from molecule number to solar masses including He
+            newcol *= co13toh2 * 2 * 1.36 * 1.66e-24 / 1.99e33
+            newcol.unit = 'solMass'
+            ptab['mlte']=newcol
+            
+            if os.path.exists(n13errcube):
+                e_newcol = np.sqrt(e_newcol)
+                e_newcol *= dv * (dx*3.09e18)**2
+                # Convert from molecule number to solar masses including He
+                e_newcol *= co13toh2 * 2 * 1.36 * 1.66e-24 / 1.99e33
+                e_newcol.unit = 'solMass'
+                ptab['e_mlte']=e_newcol
+
     ptab.write(label+'_physprop'+clipstr+'.txt', format='ascii.ecsv', overwrite=True)
